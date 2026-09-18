@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 
 const listenHost = '127.0.0.1';
@@ -46,6 +47,113 @@ function supportedReasoningEffort(model, effort) {
   return effort;
 }
 
+function originalToolKey(namespace, name) {
+  return `${namespace}\u0000${name}`;
+}
+
+function shortToolName(namespace, name) {
+  const digest = crypto.createHash('sha256').update(originalToolKey(namespace, name)).digest('hex').slice(0, 12);
+  const readable = `${namespace}_${name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(-42);
+  return `t_${digest}_${readable}`;
+}
+
+function flattenTools(tools) {
+  const byWireName = new Map();
+  const byOriginalName = new Map();
+  const flattened = [];
+  const unsupportedTypes = [];
+
+  for (const tool of Array.isArray(tools) ? tools : []) {
+    if (tool?.type === 'function') {
+      flattened.push(tool);
+      continue;
+    }
+
+    const isExpandableNamespace = tool?.type === 'namespace' && Array.isArray(tool.tools);
+    const isExpandableMcp = tool?.type === 'mcp' && Array.isArray(tool.tools);
+    if (isExpandableNamespace || isExpandableMcp) {
+      const namespace = String(tool.name ?? tool.server_label ?? 'tools');
+      for (const member of tool.tools) {
+        if (member?.type !== 'function' || typeof member.name !== 'string') {
+          unsupportedTypes.push(`${tool.type}:${member?.type ?? 'unknown'}`);
+          continue;
+        }
+        const wireName = shortToolName(namespace, member.name);
+        const mapping = { namespace, name: member.name, wireName };
+        byWireName.set(wireName, mapping);
+        byOriginalName.set(originalToolKey(namespace, member.name), mapping);
+        const descriptionPrefix = `[${namespace}.${member.name}]`;
+        const flatTool = {
+          ...member,
+          type: 'function',
+          name: wireName,
+          description: member.description
+            ? `${descriptionPrefix} ${member.description}`
+            : `${descriptionPrefix} Codex namespaced tool.`,
+        };
+        delete flatTool.defer_loading;
+        flattened.push(flatTool);
+      }
+      continue;
+    }
+
+    unsupportedTypes.push(String(tool?.type ?? 'unknown'));
+  }
+
+  return { tools: flattened, byWireName, byOriginalName, unsupportedTypes };
+}
+
+function rewriteToolReference(value, bridge) {
+  if (Array.isArray(value)) return value.map((item) => rewriteToolReference(item, bridge));
+  if (!value || typeof value !== 'object') return value;
+  const copy = { ...value };
+  if (typeof copy.namespace === 'string' && typeof copy.name === 'string') {
+    const mapping = bridge.byOriginalName.get(originalToolKey(copy.namespace, copy.name));
+    if (mapping) {
+      copy.name = mapping.wireName;
+      delete copy.namespace;
+    }
+  }
+  for (const [key, item] of Object.entries(copy)) {
+    if (key !== 'name' && key !== 'namespace') copy[key] = rewriteToolReference(item, bridge);
+  }
+  return copy;
+}
+
+function rewriteInputForOllama(value, bridge) {
+  if (Array.isArray(value)) return value.map((item) => rewriteInputForOllama(item, bridge));
+  if (!value || typeof value !== 'object') return value;
+  const copy = { ...value };
+  if (copy.type === 'function_call' && typeof copy.namespace === 'string' && typeof copy.name === 'string') {
+    const mapping = bridge.byOriginalName.get(originalToolKey(copy.namespace, copy.name));
+    if (mapping) {
+      copy.name = mapping.wireName;
+      delete copy.namespace;
+    }
+  }
+  for (const [key, item] of Object.entries(copy)) {
+    if (key !== 'name' && key !== 'namespace') copy[key] = rewriteInputForOllama(item, bridge);
+  }
+  return copy;
+}
+
+function rewriteOutputForCodex(value, bridge) {
+  if (Array.isArray(value)) return value.map((item) => rewriteOutputForCodex(item, bridge));
+  if (!value || typeof value !== 'object') return value;
+  const copy = { ...value };
+  if (copy.type === 'function_call' && typeof copy.name === 'string') {
+    const mapping = bridge.byWireName.get(copy.name);
+    if (mapping) {
+      copy.name = mapping.name;
+      copy.namespace = mapping.namespace;
+    }
+  }
+  for (const [key, item] of Object.entries(copy)) {
+    if (key !== 'name' && key !== 'namespace') copy[key] = rewriteOutputForCodex(item, bridge);
+  }
+  return copy;
+}
+
 function normalizeResponsesRequest(body) {
   const systemSections = [];
   const instructionText = extractInstructionText(body.instructions);
@@ -78,12 +186,21 @@ function normalizeResponsesRequest(body) {
     content: [{ type: 'input_text', text: systemSections.join('\n\n') }],
   });
 
-  // Ollama currently accepts ordinary Responses function tools. Codex also
-  // advertises namespace and web_search tools that the local runner rejects.
-  const tools = (Array.isArray(body.tools) ? body.tools : [])
-    .filter((tool) => tool?.type === 'function');
+  const bridge = flattenTools(body.tools);
+  if (bridge.byWireName.size > 0) {
+    systemSections.push('Some function tools use short t_ names because they represent Codex Apps, MCP, Browser, Chrome, or Computer Use tools. Read each tool description to identify its original namespace and purpose.');
+    input[0].content[0].text = systemSections.join('\n\n');
+  }
 
-  const normalized = { ...body, input, tools };
+  const normalized = {
+    ...body,
+    input: rewriteInputForOllama(input, bridge),
+    tools: bridge.tools,
+    parallel_tool_calls: false,
+  };
+  if (body.tool_choice && typeof body.tool_choice === 'object') {
+    normalized.tool_choice = rewriteToolReference(body.tool_choice, bridge);
+  }
   const originalModel = String(body.model ?? '').replace(/:latest$/, '');
   normalized.model = originalModel;
   const canonicalModel = originalModel;
@@ -104,11 +221,79 @@ function normalizeResponsesRequest(body) {
     normalized.reasoning_effort = supportedReasoningEffort(canonicalModel, requestedEffort);
   }
   delete normalized.instructions;
-  return normalized;
+  return { normalized, bridge };
+}
+
+function transformSseLine(line, bridge) {
+  if (!line.startsWith('data:')) return line;
+  const payloadText = line.slice(5).trimStart();
+  if (!payloadText || payloadText === '[DONE]') return line;
+  try {
+    return `data: ${JSON.stringify(rewriteOutputForCodex(JSON.parse(payloadText), bridge))}`;
+  } catch {
+    return line;
+  }
+}
+
+function forwardResponse(upstreamResponse, res, bridge) {
+  const responseHeaders = { ...upstreamResponse.headers };
+  delete responseHeaders.connection;
+  const contentType = String(upstreamResponse.headers['content-type'] ?? '').toLowerCase();
+  const shouldTransform = bridge.byWireName.size > 0 &&
+    (contentType.includes('application/json') || contentType.includes('text/event-stream'));
+  if (!shouldTransform) {
+    res.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
+    upstreamResponse.pipe(res);
+    return;
+  }
+
+  delete responseHeaders['content-length'];
+  delete responseHeaders['content-encoding'];
+  delete responseHeaders['transfer-encoding'];
+  if (contentType.includes('text/event-stream')) {
+    res.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
+    const decoder = new TextDecoder();
+    let pending = '';
+    upstreamResponse.on('data', (chunk) => {
+      pending += decoder.decode(chunk, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = pending.indexOf('\n')) >= 0) {
+        let line = pending.slice(0, newlineIndex);
+        pending = pending.slice(newlineIndex + 1);
+        const newline = line.endsWith('\r') ? '\r\n' : '\n';
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        res.write(transformSseLine(line, bridge) + newline);
+      }
+    });
+    upstreamResponse.on('end', () => {
+      pending += decoder.decode();
+      if (pending) res.write(transformSseLine(pending, bridge));
+      res.end();
+    });
+    upstreamResponse.on('error', (error) => res.destroy(error));
+    return;
+  }
+
+  const chunks = [];
+  upstreamResponse.on('data', (chunk) => chunks.push(chunk));
+  upstreamResponse.on('end', () => {
+    try {
+      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const output = Buffer.from(JSON.stringify(rewriteOutputForCodex(payload, bridge)), 'utf8');
+      responseHeaders['content-length'] = String(output.length);
+      res.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
+      res.end(output);
+    } catch (error) {
+      if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { type: 'adapter_error', message: `Could not translate upstream response: ${error.message}` } }));
+    }
+  });
+  upstreamResponse.on('error', (error) => res.destroy(error));
 }
 
 function forward(req, res, rawBody) {
   let outgoingBody = rawBody;
+  let bridge = flattenTools([]);
   const isResponses = req.method === 'POST' &&
     new URL(req.url ?? '/', 'http://localhost').pathname.endsWith('/responses');
   if (isResponses) {
@@ -126,8 +311,11 @@ function forward(req, res, rawBody) {
                 ? rawBody
                 : (() => { throw new Error(`Unsupported content encoding: ${encoding}`); })();
       const parsed = JSON.parse(decodedBody.toString('utf8'));
-      const normalized = normalizeResponsesRequest(parsed);
-      process.stdout.write(`Responses request model=${parsed.model ?? ''} forwarded_model=${normalized.model} reasoning=${JSON.stringify(parsed.reasoning ?? null)} forwarded_reasoning=${JSON.stringify(normalized.reasoning ?? null)} forwarded_effort=${normalized.reasoning_effort ?? ''}\n`);
+      const result = normalizeResponsesRequest(parsed);
+      const normalized = result.normalized;
+      bridge = result.bridge;
+      const unsupported = [...new Set(bridge.unsupportedTypes)].sort().join(',') || 'none';
+      process.stdout.write(`Responses request model=${parsed.model ?? ''} forwarded_model=${normalized.model} namespace_tools=${bridge.byWireName.size} unsupported_tool_types=${unsupported} reasoning=${JSON.stringify(parsed.reasoning ?? null)} forwarded_reasoning=${JSON.stringify(normalized.reasoning ?? null)} forwarded_effort=${normalized.reasoning_effort ?? ''}\n`);
       outgoingBody = Buffer.from(JSON.stringify(normalized), 'utf8');
     } catch (error) {
       res.writeHead(400, { 'content-type': 'application/json' });
@@ -139,6 +327,7 @@ function forward(req, res, rawBody) {
   const headers = { ...req.headers, host: upstream.host };
   for (const name of ['content-length', 'connection', 'transfer-encoding', 'x-codex-local-preset']) delete headers[name];
   if (isResponses) delete headers['content-encoding'];
+  if (isResponses) delete headers['accept-encoding'];
   headers['content-length'] = String(outgoingBody.length);
 
   const upstreamRequest = http.request({
@@ -148,12 +337,7 @@ function forward(req, res, rawBody) {
     method: req.method,
     path: req.url,
     headers,
-  }, (upstreamResponse) => {
-    const responseHeaders = { ...upstreamResponse.headers };
-    delete responseHeaders.connection;
-    res.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
-    upstreamResponse.pipe(res);
-  });
+  }, (upstreamResponse) => forwardResponse(upstreamResponse, res, bridge));
 
   upstreamRequest.on('error', (error) => {
     if (res.headersSent) {
