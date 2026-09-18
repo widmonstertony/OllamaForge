@@ -1,0 +1,114 @@
+{
+  "models": [
+    {
+      "additional_speed_tiers": [],
+      "apply_patch_tool_type": null,
+      "auto_compact_token_limit": 11500,
+      "availability_nux": null,
+      "base_instructions": "You are Codex, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.",
+      "context_window": 16384,
+      "default_reasoning_level": "none",
+      "default_reasoning_summary": "auto",
+      "default_service_tier": null,
+      "default_verbosity": null,
+      "description": "Ollama model",
+      "display_name": "qwen3.5-codex-fast-16k",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "include_apps_usage_instructions": false,
+      "include_plugin_usage_instructions": false,
+      "include_skills_usage_instructions": false,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "max_context_window": 16384,
+      "model_messages": null,
+      "priority": -5,
+      "service_tiers": [],
+      "shell_type": "unified_exec",
+      "slug": "qwen3.5-codex-fast-16k",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "none",
+          "description": "Fastest local responses"
+        },
+        {
+          "effort": "medium",
+          "description": "More deliberate local responses"
+        }
+      ],
+      "supports_image_detail_original": false,
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": false,
+      "supports_reasoning_summary_parameter": false,
+      "supports_search_tool": false,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "tokens"
+      },
+      "upgrade": null,
+      "visibility": "list",
+      "web_search_tool_type": "text"
+    },
+    {
+      "additional_speed_tiers": [],
+      "apply_patch_tool_type": null,
+      "auto_compact_token_limit": 11500,
+      "availability_nux": null,
+      "base_instructions": "You are Codex, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.",
+      "context_window": 16384,
+      "default_reasoning_level": "low",
+      "default_reasoning_summary": "auto",
+      "default_service_tier": null,
+      "default_verbosity": null,
+      "description": "Ollama model",
+      "display_name": "qwen3.8-codex-16k",
+      "effective_context_window_percent": 95,
+      "experimental_supported_tools": [],
+      "include_apps_usage_instructions": false,
+      "include_plugin_usage_instructions": false,
+      "include_skills_usage_instructions": false,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "max_context_window": 16384,
+      "model_messages": null,
+      "priority": -2,
+      "service_tiers": [],
+      "shell_type": "unified_exec",
+      "slug": "qwen3.8-codex-16k",
+      "support_verbosity": false,
+      "supported_in_api": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Brief local reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balanced local reasoning"
+        },
+        {
+          "effort": "xhigh",
+          "description": "Deep local reasoning (slow)"
+        }
+      ],
+      "supports_image_detail_original": false,
+      "supports_parallel_tool_calls": false,
+      "supports_reasoning_summaries": false,
+      "supports_reasoning_summary_parameter": false,
+      "supports_search_tool": false,
+      "truncation_policy": {
+        "limit": 10000,
+        "mode": "tokens"
+      },
+      "upgrade": null,
+      "visibility": "list",
+      "web_search_tool_type": "text"
+    }
+  ]
+}
