@@ -8,6 +8,8 @@
 !codex-mode-config.mjs
 !test-codex-ollama-adapter.mjs
 !test-config.mjs
+!test-macos-cloud-shortcut.mjs
+!test-macos-ollama-chatgpt-hybrid.mjs
 !test-live-ollama.mjs
 !local-qwen-catalog.json
 !Modelfile.codex-qwen-fast-16k
@@ -24,6 +26,8 @@
 !macos/
 macos/*
 !macos/local-codex.mjs
+!macos/install-cloud-shortcut.mjs
+!macos/ollama-chatgpt-hybrid.mjs
 !.github/
 .github/*
 !.github/workflows/

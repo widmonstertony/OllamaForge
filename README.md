@@ -76,6 +76,23 @@ node macos/local-codex.mjs cloud
 node macos/local-codex.mjs status
 ```
 
+安装可双击的桌面恢复快捷方式：
+
+```sh
+npm run install:macos-cloud-shortcut
+```
+
+桌面上的“云端 Codex”会先提示正在运行的任务将被中断；确认后，它会恢复“云端模型为默认、Ollama 本地模型仍可选”的混合目录，并退出、重新打开 Codex。若仓库或 Node.js 移动到新目录，请重新运行安装命令更新快捷方式。纯 OpenAI 回滚仍可手动运行 `node macos/local-codex.mjs cloud`。
+
+如果已经通过 `ollama launch chatgpt` 接入了 Ollama 云端模型，但 ChatGPT/Codex 的模型选择器里缺少本地模型，先让 Ollama 生成本地模型条目，再合并回原云端目录：
+
+```sh
+ollama launch chatgpt --config --model qwen3.5-codex-fast-16k --yes
+npm run enable:macos-hybrid
+```
+
+混合模式只加入 `ollama list` 中真实安装、且已由 Ollama 生成路由元数据的本地模型；默认模型、Ollama 云端模型、OpenAI 云端模型、Apps、插件和浏览器配置保持不变。脚本会在 `~/.ollama/backup/codex-app` 中保留变更前的三份配置，并要求重启桌面端后加载新目录。
+
 脚本会在尚未安装基础模型时进行磁盘空间预检：9B 至少需要约 9 GiB 可用空间，27B 至少需要约 24 GiB。首次切换后请先用一条短消息验证请求，再运行长任务。
 
 ## 故障检查与测试
