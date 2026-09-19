@@ -2,10 +2,34 @@
 
 在 ChatGPT/Codex 桌面 GUI 中使用本机 Ollama 模型，同时保留原有云端配置。仓库只包含适配器、模型目录和启动脚本；不包含模型权重、账号、个人配置快照或运行日志。
 
+## macOS / Windows 一键接入
+
+安装 Git、Node.js 24+、Ollama，并至少打开一次 ChatGPT/Codex 后，在仓库目录运行同一条命令：
+
+```sh
+# 默认下载并接入约 6.6 GB 的 9B；适合 16–24 GB 内存电脑
+npm run setup -- --model 9b
+
+# 或者下载并接入约 18 GB 的 Qwen 3.8 27B
+npm run setup -- --model 27b
+```
+
+PowerShell 中命令完全相同。脚本只下载所选模型、创建对应的 16K Codex 别名、调用 Ollama 的 ChatGPT 集成，然后把运行前的 Ollama 云端或 OpenAI 模型恢复为默认模型。本地模型会同时出现在选择器里。完成后请彻底退出并重新打开 ChatGPT/Codex。
+
+另一台电脑更新仓库后可以直接运行：
+
+```sh
+git pull
+npm run setup -- --model 9b
+```
+
+模型权重保存在每台电脑自己的 Ollama 目录，永远不会提交到 Git。重复配置且模型已经下载时可加 `--no-pull`；如果模型不存在，该选项会安全报错而不会下载。
+
 ## 行为
 
-- macOS 本地模式只把本次选择且已经安装的模型写入模型目录。`local 9b` 不再要求同时下载 27B。Windows 现有工作流仍可准备两个模型。
-- 本地模式和 OpenAI 云端模式使用不同 provider。由于 Codex 的 provider 是独立配置，单靠同一个模型选择器不能在两者之间跨服务切换；Windows 用本地/云端快捷方式，macOS 用下方命令切换。
+- 一键安装和平台快捷方式都只准备本次选择的模型。选择 9B 不会检查或要求 27B，反之亦然。
+- 一键安装采用混合目录：原有云端模型继续作为默认，本地模型通过 `127.0.0.1:11434` 的 Ollama Codex 网关按需推理。
+- 一键安装让云端和本地模型统一经过 Ollama 的 Codex 网关，因此可在同一个模型选择器中切换。下方旧的“完全本地 provider”快捷方式仍是独立模式，可用于不希望云端请求经过 Ollama 时。
 - 适配器监听 `127.0.0.1:11435`，上游 Ollama 默认 `127.0.0.1:11434`。Windows 由用户级计划任务托管，并有每分钟健康检查；macOS 由用户级 `launchd` 保持运行。
 - 本地目录保留 Apps、插件、skills、Browser、Chrome、Computer Use 和 MCP 的使用说明。适配器把 Codex Responses API 的 `namespace` 工具展开成 Ollama 支持的普通函数调用，并在响应中还原 namespace；Codex 仍负责执行工具、OAuth、权限审批和沙箱。
 
@@ -14,16 +38,8 @@
 ## 先决条件
 
 1. 安装并至少打开一次 ChatGPT/Codex 桌面应用，使 `~/.codex/config.toml` 存在。
-2. 安装 Ollama 和支持 `zlib.zstdDecompressSync` 的较新 Node.js。Windows 还需 PowerShell 5.1 及任务计划程序。
-3. 在每台电脑各自下载需要的模型权重（不会随 Git 仓库传输）：
-
-   ```text
-   ollama pull qwen3.5:9b
-   # 只有准备使用 27B 时才需要：
-   ollama pull qwen3.8:27b
-   ```
-
-   Ollama 官方目录中的默认量化权重约为：9B 6.6 GB，27B 18 GB。27B 还需要额外运行空间；磁盘和统一内存不足时只安装 9B。
+2. 安装 Ollama 和 Node.js 24 或更新版本。Windows 快捷方式还需 PowerShell 5.1 及任务计划程序。
+3. 保留足够空间：脚本在缺少模型时要求 9B 至少 9 GiB、27B 至少 24 GiB 可用磁盘。Ollama 默认量化权重约为 6.6 GB 和 18 GB。27B 建议 32 GB+ 统一内存；24 GB 可以加载，但会自动把部分层卸载到 CPU，首次加载和输出都很慢。实测 M4 Pro 24 GB 在 Codex 同时运行时完成一组短文本和工具调用用了约 10 分 40 秒。日常交互优先使用 9B 或云端模型。
 
 ## 本地工具兼容性
 
@@ -40,10 +56,10 @@
 
 ## Windows
 
-在仓库目录运行一次：
+推荐先用跨平台脚本下载并配置所选模型，再按需安装桌面快捷方式：
 
 ```powershell
-& .\Start-CodexOllama.ps1 -ModelName qwen3.5-codex-fast-16k
+npm run setup -- --model 9b
 & .\Install-WindowsShortcuts.ps1
 ```
 
@@ -61,7 +77,14 @@
 
 ## macOS
 
-在仓库目录运行：
+推荐直接使用混合云端/本地目录：
+
+```sh
+npm run setup -- --model 9b
+# 或：npm run setup -- --model 27b
+```
+
+旧的完全本地 provider 切换方式仍然保留：
 
 ```sh
 node macos/local-codex.mjs local 9b
@@ -84,14 +107,13 @@ npm run install:macos-cloud-shortcut
 
 桌面上的“云端 Codex”会先提示正在运行的任务将被中断；确认后，它会恢复“云端模型为默认、Ollama 本地模型仍可选”的混合目录，并退出、重新打开 Codex。若仓库或 Node.js 移动到新目录，请重新运行安装命令更新快捷方式。纯 OpenAI 回滚仍可手动运行 `node macos/local-codex.mjs cloud`。
 
-如果已经通过 `ollama launch chatgpt` 接入了 Ollama 云端模型，但 ChatGPT/Codex 的模型选择器里缺少本地模型，先让 Ollama 生成本地模型条目，再合并回原云端目录：
+如果曾手动执行 `ollama launch chatgpt`，模型选择器里仍缺本地模型，重新运行一键命令即可自动生成并合并：
 
 ```sh
-ollama launch chatgpt --config --model qwen3.5-codex-fast-16k --yes
-npm run enable:macos-hybrid
+npm run setup -- --model 9b --no-pull
 ```
 
-混合模式只加入 `ollama list` 中真实安装、且已由 Ollama 生成路由元数据的本地模型；默认模型、Ollama 云端模型、OpenAI 云端模型、Apps、插件和浏览器配置保持不变。脚本会在 `~/.ollama/backup/codex-app` 中保留变更前的三份配置，并要求重启桌面端后加载新目录。
+混合模式只加入 `ollama list` 中真实安装、且有 Ollama 路由元数据的本地模型；默认模型、Ollama 云端模型、OpenAI 云端模型、Apps、插件和浏览器配置保持不变。脚本在 macOS 的 `~/.ollama/backup/codex-app` 或 Windows 的 `%USERPROFILE%\.ollama\backup\codex-app` 保留变更前的配置；任何集成错误都会自动恢复调用前的三份文件。
 
 脚本会在尚未安装基础模型时进行磁盘空间预检：9B 至少需要约 9 GiB 可用空间，27B 至少需要约 24 GiB。首次切换后请先用一条短消息验证请求，再运行长任务。
 
@@ -102,7 +124,7 @@ node test-codex-ollama-adapter.mjs
 npm run test:live
 ```
 
-`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加模型 slug。Windows 日志在 `%LOCALAPPDATA%\CodexOllama`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
+`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加模型 slug。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`；24 GB 机器首次加载 27B 可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 日志在 `%LOCALAPPDATA%\CodexOllama`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
 
 如果 9B 连续生成无效工具参数，或任务必须使用 OpenAI provider 托管的 built-in tool，请运行 `node macos/local-codex.mjs cloud` 并重启 Codex。云端切换会按完整文本快照恢复进入本地模式前的配置，包括 provider、模型、feature、MCP 设置、注释和原有顺序；macOS/Linux 上快照权限强制为仅当前用户可读写（`0600`）。
 

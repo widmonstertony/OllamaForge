@@ -20,6 +20,8 @@ $modelSpecs = @(
     @{ Alias = 'qwen3.5-codex-fast-16k'; Base = 'qwen3.5:9b'; File = 'Modelfile.codex-qwen-fast-16k' },
     @{ Alias = 'qwen3.8-codex-16k'; Base = 'qwen3.8:27b'; File = 'Modelfile.codex-qwen-16k' }
 )
+$selectedSpec = $modelSpecs | Where-Object { $_.Alias -eq $ModelName } | Select-Object -First 1
+if (-not $selectedSpec) { throw "Unknown local model: $ModelName" }
 $runtimeDir = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [Environment]::GetFolderPath('UserProfile') }) 'CodexOllama'
 $pidFile = Join-Path $runtimeDir 'codex-ollama-adapter.pid'
 $stdoutLog = Join-Path $runtimeDir 'codex-ollama-adapter.stdout.log'
@@ -50,26 +52,24 @@ try {
 }
 
 $previousErrorActionPreference = $ErrorActionPreference
-foreach ($spec in $modelSpecs) {
+try {
+    $ErrorActionPreference = 'Continue'
+    & $ollamaExe show $selectedSpec.Alias *> $null
+    $aliasExists = $LASTEXITCODE -eq 0
+} finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+if (-not $aliasExists) {
     try {
         $ErrorActionPreference = 'Continue'
-        & $ollamaExe show $spec.Alias *> $null
-        $aliasExists = $LASTEXITCODE -eq 0
+        & $ollamaExe show $selectedSpec.Base *> $null
+        $baseExists = $LASTEXITCODE -eq 0
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if (-not $aliasExists) {
-        try {
-            $ErrorActionPreference = 'Continue'
-            & $ollamaExe show $spec.Base *> $null
-            $baseExists = $LASTEXITCODE -eq 0
-        } finally {
-            $ErrorActionPreference = $previousErrorActionPreference
-        }
-        if (-not $baseExists) { throw "Base model $($spec.Base) is not installed. Run: ollama pull $($spec.Base)" }
-        & $ollamaExe create $spec.Alias -f (Join-Path $PSScriptRoot $spec.File)
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create Ollama model alias $($spec.Alias)." }
-    }
+    if (-not $baseExists) { throw "Base model $($selectedSpec.Base) is not installed. Run: ollama pull $($selectedSpec.Base)" }
+    & $ollamaExe create $selectedSpec.Alias -f (Join-Path $PSScriptRoot $selectedSpec.File)
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create Ollama model alias $($selectedSpec.Alias)." }
 }
 
 if ($AdapterPort -ne 11435) { throw 'The managed Codex adapter task uses port 11435.' }

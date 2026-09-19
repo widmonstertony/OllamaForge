@@ -11,12 +11,14 @@ const cloudCatalog = { models: [
   { slug: 'gpt-cloud', visibility: 'list' },
 ] };
 const currentCatalog = { models: [
+  { slug: 'qwen3.5-codex-fast-16k:latest', visibility: 'list', include_apps_usage_instructions: true },
   { slug: 'qwen3.5-codex-fast-16k', visibility: 'list', include_apps_usage_instructions: true },
   { slug: 'qwen3.5:9b', visibility: 'list', include_apps_usage_instructions: true },
   { slug: 'not-installed:7b', visibility: 'list' },
 ] };
 const cloudRouting = { models: [{ slug: 'gemma4:31b:cloud' }], auto_review_model: 'selected', auto_review_fallback_model: 'gemma4:31b:cloud' };
 const currentRouting = { models: [
+  { slug: 'qwen3.5-codex-fast-16k:latest', thinking: { supported: true } },
   { slug: 'qwen3.5-codex-fast-16k', thinking: { supported: true } },
   { slug: 'qwen3.5:9b', thinking: { supported: true } },
 ] };
@@ -46,6 +48,23 @@ assert.deepEqual(merged.routing.models.map((entry) => entry.slug), [
   'qwen3.5-codex-fast-16k',
   'qwen3.5:9b',
 ]);
+
+const openAIConfig = cloudConfig.replace('gemma4:31b:cloud', 'gpt-5.6-sol');
+const openAICatalog = { models: [
+  { slug: 'gpt-5.6-sol', visibility: 'list' },
+  { slug: 'gemma4:31b:cloud', visibility: 'list' },
+] };
+const openAIMerged = mergeHybridConfiguration({
+  generatedConfigText: localConfig,
+  previousConfigText: openAIConfig,
+  generatedCatalog: currentCatalog,
+  previousCatalog: openAICatalog,
+  generatedRouting: currentRouting,
+  previousRouting: { models: [{ slug: 'gemma4:31b:cloud' }] },
+  installedModels: parsed,
+});
+assert.match(openAIMerged.configText, /^model = "gpt-5.6-sol"/m);
+assert.ok(openAIMerged.catalog.models.some((entry) => entry.slug === 'gpt-5.6-sol'));
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-chatgpt-hybrid-'));
 try {

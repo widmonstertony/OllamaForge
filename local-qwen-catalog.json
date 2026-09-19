@@ -60,7 +60,7 @@
       "availability_nux": null,
       "base_instructions": "You are Codex, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.",
       "context_window": 16384,
-      "default_reasoning_level": "low",
+      "default_reasoning_level": "none",
       "default_reasoning_summary": "auto",
       "default_service_tier": null,
       "default_verbosity": null,
@@ -85,16 +85,12 @@
       "supported_in_api": true,
       "supported_reasoning_levels": [
         {
-          "effort": "low",
-          "description": "Brief local reasoning"
+          "effort": "none",
+          "description": "Fastest local responses without thinking"
         },
         {
           "effort": "medium",
           "description": "Balanced local reasoning"
-        },
-        {
-          "effort": "xhigh",
-          "description": "Deep local reasoning (slow)"
         }
       ],
       "supports_image_detail_original": false,
