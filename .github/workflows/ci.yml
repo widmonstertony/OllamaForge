@@ -17,3 +17,18 @@ jobs:
           node-version: '24'
       - run: npm test
       - run: node --check macos/local-codex.mjs
+      - name: Parse PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $allErrors = @()
+          Get-ChildItem -Path . -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $fileErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$fileErrors)
+            $allErrors += $fileErrors
+          }
+          if ($allErrors.Count -gt 0) {
+            $allErrors | Format-List
+            throw "PowerShell syntax validation failed."
+          }

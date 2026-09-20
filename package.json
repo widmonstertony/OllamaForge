@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs",
+    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-setup.mjs",
+    "setup": "node setup.mjs",
+    "install:macos-cloud-shortcut": "node macos/install-cloud-shortcut.mjs",
+    "enable:macos-hybrid": "node macos/ollama-chatgpt-hybrid.mjs",
     "test:live": "node test-live-ollama.mjs"
   },
   "engines": {

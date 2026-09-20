@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [action, configPath, statePath, sourceCatalogPath, localCatalogPath, requestedModel] = process.argv.slice(2);
+const [action, configPath, statePath, sourceCatalogPath, localCatalogPath, requestedModel, ...selectedModelArgs] = process.argv.slice(2);
 const providerId = 'local_qwen';
 const localModel = requestedModel ?? 'qwen3.5-codex-fast-16k';
 const managedKeys = ['model', 'model_reasoning_effort', 'model_provider', 'model_catalog_json', 'openai_base_url', 'developer_instructions', 'tool_output_token_limit'];
@@ -11,7 +11,7 @@ const managedTables = {
 };
 
 if (!['snapshot', 'local', 'cloud', 'rollback', 'status'].includes(action) || !configPath || !statePath) {
-  throw new Error('Usage: node codex-mode-config.mjs <snapshot|local|cloud|rollback|status> <config> <state> [source-catalog] [local-catalog] [local-model]');
+  throw new Error('Usage: node codex-mode-config.mjs <snapshot|local|cloud|rollback|status> <config> <state> [source-catalog] [local-catalog] [local-model] [catalog-model ...]');
 }
 
 function readConfig() {
@@ -109,23 +109,28 @@ if (action === 'status') {
 } else if (action === 'snapshot') {
   if (!isLocal(current)) {
     const state = {
-      version: 2,
+      version: 3,
       capturedAt: new Date().toISOString(),
+      configText: current,
       values: topValues(current),
       tables: Object.fromEntries(Object.entries(managedTables).map(([name, keys]) =>
         [name, tableValues(current, name, keys)])),
     };
-    fs.mkdirSync(path.dirname(statePath), { recursive: true });
-    fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    fs.mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    if (process.platform !== 'win32') fs.chmodSync(statePath, 0o600);
     process.stdout.write('Saved current cloud model settings.\n');
   } else if (!fs.existsSync(statePath)) {
     throw new Error('Local mode is active but no cloud-settings snapshot exists. Refusing to overwrite it.');
   }
+  if (process.platform !== 'win32' && fs.existsSync(statePath)) fs.chmodSync(statePath, 0o600);
 } else if (action === 'local') {
   if (!fs.existsSync(statePath)) throw new Error('Cloud-settings snapshot is missing. Run snapshot first.');
   if (!sourceCatalogPath || !localCatalogPath) throw new Error('Local mode requires source and filtered catalog paths.');
   const catalog = JSON.parse(fs.readFileSync(sourceCatalogPath, 'utf8'));
-  const localModels = ['qwen3.5-codex-fast-16k', 'qwen3.8-codex-16k'];
+  const localModels = selectedModelArgs.length > 0
+    ? [...new Set(selectedModelArgs)]
+    : ['qwen3.5-codex-fast-16k', 'qwen3.8-codex-16k'];
   const entries = localModels.flatMap((slug) => {
     const source = catalog.models?.find((model) => model.slug === slug || model.slug === `${slug}:latest`);
     if (!source) return [];
@@ -146,9 +151,9 @@ if (action === 'status') {
           { effort: 'medium', description: 'Balanced local reasoning' },
           { effort: 'xhigh', description: 'Deep local reasoning (slow)' },
         ];
-    entry.include_apps_usage_instructions = false;
-    entry.include_plugin_usage_instructions = false;
-    entry.include_skills_usage_instructions = false;
+    entry.include_apps_usage_instructions = true;
+    entry.include_plugin_usage_instructions = true;
+    entry.include_skills_usage_instructions = true;
     entry.supports_parallel_tool_calls = false;
     entry.supports_search_tool = false;
     return [entry];
@@ -171,10 +176,6 @@ if (action === 'status') {
       : 'Local macOS runtime. Use native macOS/POSIX shell commands and paths. ') +
       'For filesystem analysis, scan large candidate folders once, avoid repeated full-drive recursive scans, and report partial results or access errors. Prefer concise tool output and provide progress on slow work.'),
   });
-  text = setTableValues(text, 'features', {
-    plugins: 'false', apps: 'false', browser_use: 'false', image_generation: 'false', multi_agent: 'false',
-  });
-  text = setTableValues(text, 'mcp_servers.node_repl', { enabled: 'false' });
   const newline = text.includes('\r\n') ? '\r\n' : '\n';
   text += `${newline}[model_providers.${providerId}]${newline}`;
   text += `name = "Local Qwen via Ollama"${newline}`;
@@ -191,10 +192,15 @@ if (action === 'status') {
   } else {
     if (!fs.existsSync(statePath)) throw new Error('Cloud-settings snapshot is missing. Refusing to guess the original model.');
     const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-    if (![1, 2].includes(state.version) || !state.values) throw new Error('Cloud-settings snapshot is invalid.');
-    let text = setTopValues(removeManagedProvider(current), state.values);
-    for (const name of Object.keys(managedTables)) {
-      text = setTableValues(text, name, state.tables?.[name] ?? {});
+    if (![1, 2, 3].includes(state.version) || !state.values) throw new Error('Cloud-settings snapshot is invalid.');
+    let text;
+    if (state.version >= 3 && typeof state.configText === 'string') {
+      text = state.configText;
+    } else {
+      text = setTopValues(removeManagedProvider(current), state.values);
+      for (const name of Object.keys(managedTables)) {
+        text = setTableValues(text, name, state.tables?.[name] ?? {});
+      }
     }
     writeConfig(text);
     process.stdout.write('Restored original cloud model settings.\n');

@@ -25,8 +25,8 @@ const plist = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.localcodex
 const label = 'com.localcodex.ollama-adapter';
 const domain = `gui/${process.getuid()}`;
 const models = [
-  { alias: 'qwen3.5-codex-fast-16k', base: 'qwen3.5:9b', file: 'Modelfile.codex-qwen-fast-16k' },
-  { alias: 'qwen3.8-codex-16k', base: 'qwen3.8:27b', file: 'Modelfile.codex-qwen-16k' },
+  { choice: '9b', alias: 'qwen3.5-codex-fast-16k', base: 'qwen3.5:9b', file: 'Modelfile.codex-qwen-fast-16k', minimumFreeGiB: 9 },
+  { choice: '27b', alias: 'qwen3.8-codex-16k', base: 'qwen3.8:27b', file: 'Modelfile.codex-qwen-16k', minimumFreeGiB: 24 },
 ];
 
 function run(command, args, options = {}) {
@@ -35,13 +35,28 @@ function run(command, args, options = {}) {
 function existsInOllama(model) {
   return spawnSync('ollama', ['show', model], { stdio: 'ignore' }).status === 0;
 }
+function availableBytes(targetPath) {
+  const stats = fs.statfsSync(targetPath);
+  return Number(stats.bavail) * Number(stats.bsize);
+}
+function formatGiB(bytes) {
+  return (bytes / (1024 ** 3)).toFixed(1);
+}
 function xml(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 }
 function installLaunchAgent() {
   fs.mkdirSync(path.dirname(plist), { recursive: true });
-  const runner = path.join(root, 'run-codex-ollama-adapter.mjs');
+  // LaunchAgents can be blocked by macOS privacy controls when their program
+  // loads scripts directly from Documents/Desktop. Install a self-contained
+  // runtime under Application Support before bootstrapping the agent.
+  fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(stateDir, 0o700);
+  const runner = path.join(stateDir, 'run-codex-ollama-adapter.mjs');
+  const adapter = path.join(stateDir, 'codex-ollama-adapter.mjs');
+  fs.copyFileSync(path.join(root, 'run-codex-ollama-adapter.mjs'), runner);
+  fs.copyFileSync(path.join(root, 'codex-ollama-adapter.mjs'), adapter);
   const content = `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
     `<plist version="1.0"><dict>\n` +
@@ -76,12 +91,17 @@ if (!fs.existsSync(config)) {
 if (command === 'local') {
   const choice = process.argv[3] || '9b';
   if (!['9b', '27b'].includes(choice)) throw new Error('Model default must be 9b or 27b.');
-  for (const model of models) {
-    if (existsInOllama(model.alias)) continue;
-    if (!existsInOllama(model.base)) {
-      throw new Error(`Missing ${model.base}. First run: ollama pull ${model.base}`);
+  const selectedModel = models.find((model) => model.choice === choice);
+  if (!existsInOllama(selectedModel.alias)) {
+    if (!existsInOllama(selectedModel.base)) {
+      const freeBytes = availableBytes(os.homedir());
+      const requiredBytes = selectedModel.minimumFreeGiB * (1024 ** 3);
+      if (freeBytes < requiredBytes) {
+        throw new Error(`Not enough free disk space for ${selectedModel.base}: ${formatGiB(freeBytes)} GiB available, at least ${selectedModel.minimumFreeGiB} GiB required.`);
+      }
+      throw new Error(`Missing ${selectedModel.base}. First run: ollama pull ${selectedModel.base}`);
     }
-    run('ollama', ['create', model.alias, '-f', path.join(root, model.file)]);
+    run('ollama', ['create', selectedModel.alias, '-f', path.join(root, selectedModel.file)]);
   }
   fs.mkdirSync(stateDir, { recursive: true });
   configAction('snapshot');
@@ -92,9 +112,9 @@ if (command === 'local') {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   if (!ready) throw new Error('Local adapter did not become healthy on 127.0.0.1:11435.');
-  const defaultModel = choice === '9b' ? models[0].alias : models[1].alias;
-  configAction('local', sourceCatalog, catalog, defaultModel);
-  console.log(`Local mode is ready. Default: ${defaultModel}. Both models remain selectable in Codex.`);
+  const defaultModel = selectedModel.alias;
+  configAction('local', sourceCatalog, catalog, defaultModel, selectedModel.alias);
+  console.log(`Local mode is ready. Available local model: ${defaultModel}.`);
   console.log('Quit and reopen the ChatGPT/Codex desktop app to load the local catalog.');
 } else if (command === 'cloud') {
   configAction('cloud');
