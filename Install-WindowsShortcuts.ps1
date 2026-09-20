@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$powerShell = Join-Path $PSHOME 'powershell.exe'
+$powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $shell = New-Object -ComObject WScript.Shell
 $entries = @(
     @{ Name = '本地 Codex（GUI）'; Script = 'Launch-Codex-GUI.ps1'; Extra = '' },
