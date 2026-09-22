@@ -12,9 +12,11 @@
 !test-macos-ollama-chatgpt-hybrid.mjs
 !test-setup.mjs
 !test-deploy.mjs
+!test-connect.mjs
 !test-live-ollama.mjs
 !setup.mjs
 !deploy.mjs
+!connect.mjs
 !ollama-chatgpt-hybrid.mjs
 !local-qwen-catalog.json
 !Modelfile.codex-qwen-fast-16k
