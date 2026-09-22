@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 
 const effortByModel = new Map([
   ['qwen3.5-codex-fast-16k', 'none'],
   ['qwen3.8-codex-16k', 'none'],
+  ['qwen3.8-codex-iq4-xs-110k', 'none'],
 ]);
 const requestedModels = process.argv.slice(2);
 const models = requestedModels.length > 0 ? requestedModels : ['qwen3.5-codex-fast-16k'];
@@ -11,6 +15,18 @@ const responsesUrl = process.env.CODEX_RESPONSES_URL || 'http://127.0.0.1:11435/
 const timeoutMs = Number(process.env.CODEX_TEST_TIMEOUT_MS || 180_000);
 const textTokenLimit = Number(process.env.CODEX_TEST_TEXT_TOKENS || 48);
 const toolTokenLimit = Number(process.env.CODEX_TEST_TOOL_TOKENS || 128);
+
+function requestHeaders(url) {
+  if (!new URL(url).pathname.includes('/api/codex/')) return {};
+  const authPath = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json');
+  const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+  const token = auth.tokens?.access_token || auth.OPENAI_API_KEY;
+  if (!token) throw new Error(`Codex authentication token not found in ${authPath}.`);
+  return {
+    authorization: `Bearer ${token}`,
+    ...(auth.tokens?.account_id ? { 'chatgpt-account-id': auth.tokens.account_id } : {}),
+  };
+}
 
 function postJson(url, payload) {
   return new Promise((resolve, reject) => {
@@ -20,6 +36,7 @@ function postJson(url, payload) {
       headers: {
         'content-type': 'application/json',
         'content-length': Buffer.byteLength(body),
+        ...requestHeaders(url),
       },
     }, (response) => {
       const chunks = [];
@@ -50,7 +67,12 @@ for (const model of models) {
   const response = await postJson(responsesUrl, {
     model,
     reasoning: { effort },
-    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Reply PING.' }] }],
+    input: [
+      { role: 'system', content: [{ type: 'input_text', text: 'Follow the user request.' }] },
+      { role: 'user', content: [{ type: 'input_text', text: 'Setup.' }] },
+      { role: 'system', content: [{ type: 'input_text', text: 'Second system message.' }] },
+      { role: 'user', content: [{ type: 'input_text', text: 'Reply PING.' }] },
+    ],
     stream: false,
     max_output_tokens: textTokenLimit,
   });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connect, parseArgs, parseInstalledModels, selectPrimaryModel } from './connect.mjs';
+import { connect, parseArgs, parseInstalledModels, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
 
 assert.deepEqual(parseArgs([]), { model: null, disconnect: false, launch: false, noShortcut: false });
 assert.deepEqual(parseArgs(['--model', 'qwen3.5:9b']), { model: 'qwen3.5:9b', disconnect: false, launch: false, noShortcut: false });
@@ -23,13 +23,14 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-connect-'));
 try {
   const configDir = path.join(work, '.codex');
   const configPath = path.join(configDir, 'config.toml');
+  const catalogPath = path.join(configDir, 'models.json');
   fs.mkdirSync(configDir, { recursive: true });
   const calls = [];
   const runCommand = (_command, args) => {
     calls.push(args);
     if (args[0] === 'list') return { status: 0, stdout: 'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\n' };
     if (args[0] === 'launch') {
-      fs.writeFileSync(configPath, 'model = "qwen3.5:9b"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\n');
+      fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
       return { status: 0 };
     }
     throw new Error(`Unexpected command: ${args.join(' ')}`);
@@ -51,6 +52,17 @@ try {
   assert.ok(calls.at(-1).includes('--config'));
   assert.equal(restartPlatform, 'win32');
   assert.equal(launched.shortcut, null);
+
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{
+    slug: 'qwen3.8-codex-iq4-xs-110k', context_window: 262144,
+    max_context_window: 262144, effective_context_window_percent: 95,
+    default_reasoning_level: 'high',
+  }] }));
+  assert.equal(tuneCodexCatalog(configPath), 1);
+  const tuned = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models[0];
+  assert.equal(tuned.context_window, 110000);
+  assert.equal(tuned.max_context_window, 110000);
+  assert.equal(tuned.default_reasoning_level, 'none');
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

@@ -11,6 +11,14 @@ assert.equal(OLLAMA_ENV.OLLAMA_KV_CACHE_TYPE, 'q4_0');
 assert.equal(OLLAMA_ENV.OLLAMA_CONTEXT_LENGTH, '110000');
 assert.equal(OLLAMA_ENV.OLLAMA_NUM_PARALLEL, '1');
 assert.match(buildDirectShortcut({ nodePath: '/usr/local/bin/node', connectorPath: '/repo/connect.mjs' }), /connect\.mjs' --launch --no-shortcut/);
+const iq4Modelfile = fs.readFileSync(new URL('./Modelfile.qwen38-iq4-110k', import.meta.url), 'utf8');
+assert.match(iq4Modelfile, /TEMPLATE """/);
+assert.match(iq4Modelfile, /range .*\.Messages/);
+assert.match(iq4Modelfile, /range \.Tools/);
+assert.doesNotMatch(iq4Modelfile, /System message must be at the beginning/);
+const deploySource = fs.readFileSync(new URL('./deploy.mjs', import.meta.url), 'utf8');
+assert.match(deploySource, /This second system message verifies Codex compatibility/);
+assert.match(deploySource, /Codex tool smoke test failed/);
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-deploy-'));
 try {

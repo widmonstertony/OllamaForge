@@ -46,7 +46,7 @@ npm run deploy:27b
 2. 持久化 Ollama 配置：110K 上下文、Q4_0 K/V cache、Flash Attention、单并发。
 3. 重启 Ollama，创建 `qwen3.8-codex-iq4-xs-110k`，并用 `draft_num_predict 0` 关闭 MTP。
 4. 通过 Ollama 原生 `http://127.0.0.1:11434/api/codex/v1` 网关把模型加入 Codex，同时保留原有云端默认模型。
-5. 创建桌面快捷方式，并发送 `PING` 做真实直连验收。
+5. 创建桌面快捷方式，并通过 Codex 网关执行多段 system 指令、`PING` 文本和工具调用验收。
 
 模型约 12.18 GiB；首次部署还需要导入和运行空间，建议至少预留 16 GiB。下载中断后再次运行同一命令即可续传。部署完成后彻底退出并重新打开 Codex，在模型选择器中选择 `qwen3.8-codex-iq4-xs-110k`。
 
@@ -183,7 +183,7 @@ node test-codex-ollama-adapter.mjs
 npm run test:live
 ```
 
-`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加模型 slug。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`；24 GB 机器首次加载 27B 可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 适配器日志在 `%LOCALAPPDATA%\CodexOllama`，桌面入口日志在 `%LOCALAPPDATA%\OllamaForge\shortcut.log`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
+`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加 `qwen3.8-codex-iq4-xs-110k`。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`，测试脚本会读取 Codex 登录凭据但不会输出；27B 首次加载可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 适配器日志在 `%LOCALAPPDATA%\CodexOllama`，桌面入口日志在 `%LOCALAPPDATA%\OllamaForge\shortcut.log`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
 
 如果 9B 连续生成无效工具参数，或任务必须使用 OpenAI provider 托管的 built-in tool，请运行 `node macos/local-codex.mjs cloud` 并重启 Codex。云端切换会按完整文本快照恢复进入本地模式前的配置，包括 provider、模型、feature、MCP 设置、注释和原有顺序；macOS/Linux 上快照权限强制为仅当前用户可读写（`0600`）。
 

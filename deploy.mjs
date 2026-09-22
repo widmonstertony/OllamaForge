@@ -160,14 +160,31 @@ function responseText(payload) {
     .join('');
 }
 
+function codexAuthHeaders() {
+  const authPath = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'auth.json');
+  const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+  const token = auth.tokens?.access_token || auth.OPENAI_API_KEY;
+  if (!token) throw new Error(`Codex authentication token not found in ${authPath}.`);
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };
+  if (auth.tokens?.account_id) headers['chatgpt-account-id'] = auth.tokens.account_id;
+  return headers;
+}
+
 async function smokeTest() {
   const started = Date.now();
-  const response = await fetch('http://127.0.0.1:11434/api/codex/v1/responses', {
+  const url = 'http://127.0.0.1:11434/api/codex/v1/responses?client_version=0.0.0';
+  const headers = codexAuthHeaders();
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({
       model: TARGET.alias,
-      input: 'Reply with PING only.',
+      input: [
+        { role: 'system', content: [{ type: 'input_text', text: 'Follow the user request exactly.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'Setup message.' }] },
+        { role: 'system', content: [{ type: 'input_text', text: 'This second system message verifies Codex compatibility.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'Reply with PING only.' }] },
+      ],
       reasoning: { effort: 'none' },
       max_output_tokens: 64,
       stream: false,
@@ -179,7 +196,36 @@ async function smokeTest() {
   if (!response.ok || output !== 'PING') {
     throw new Error(`Direct Codex smoke test failed (${response.status}): ${JSON.stringify(payload).slice(0, 1000)}`);
   }
-  return { output, seconds: ((Date.now() - started) / 1000).toFixed(1) };
+  const toolResponse = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: TARGET.alias,
+      input: [
+        { role: 'system', content: [{ type: 'input_text', text: 'Call the requested function.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'Call ping once with value ok.' }] },
+      ],
+      tools: [{
+        type: 'function', name: 'ping', description: 'Return a test value.', strict: true,
+        parameters: {
+          type: 'object', properties: { value: { type: 'string' } },
+          required: ['value'], additionalProperties: false,
+        },
+      }],
+      tool_choice: { type: 'function', name: 'ping' },
+      parallel_tool_calls: false,
+      reasoning: { effort: 'none' },
+      max_output_tokens: 128,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(600_000),
+  });
+  const toolPayload = await toolResponse.json();
+  const call = toolPayload.output?.find((item) => item.type === 'function_call');
+  if (!toolResponse.ok || call?.name !== 'ping' || JSON.parse(call.arguments ?? '{}').value !== 'ok') {
+    throw new Error(`Codex tool smoke test failed (${toolResponse.status}): ${JSON.stringify(toolPayload).slice(0, 1000)}`);
+  }
+  return { output, tool: call.name, seconds: ((Date.now() - started) / 1000).toFixed(1) };
 }
 
 function sleep(milliseconds) {
@@ -213,7 +259,7 @@ if (isDirectRun) {
     console.log(`Model: ${TARGET.alias}`);
     console.log('Codex endpoint: http://127.0.0.1:11434/api/codex/v1');
     console.log(`Desktop shortcut: ${result.shortcut}`);
-    if (result.smoke) console.log(`Smoke test: ${result.smoke.output} (${result.smoke.seconds}s)`);
+    if (result.smoke) console.log(`Smoke test: ${result.smoke.output} + ${result.smoke.tool} tool (${result.smoke.seconds}s)`);
     console.log('Quit and reopen Codex, then select qwen3.8-codex-iq4-xs-110k.');
   } catch (error) {
     console.error(`Deployment failed: ${error.message}`);

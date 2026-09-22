@@ -10,6 +10,9 @@ import { resolveOllamaExecutable } from './setup.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const endpoint = 'http://127.0.0.1:11434/api/codex/v1';
+const tunedModels = new Map([
+  ['qwen3.8-codex-iq4-xs-110k', { contextWindow: 110_000, defaultReasoning: 'none' }],
+]);
 
 function run(command, args, { stdio = 'inherit' } = {}) {
   const result = spawnSync(command, args, { stdio, encoding: stdio === 'pipe' ? 'utf8' : undefined });
@@ -59,6 +62,25 @@ export function selectPrimaryModel(installed, requested, current) {
   if (currentMatch) return currentMatch;
   const preferred = byCanonical.get('qwen3.8-codex-iq4-xs-110k');
   return preferred ?? byCanonical.values().next().value ?? null;
+}
+
+export function tuneCodexCatalog(configPath) {
+  const config = fs.readFileSync(configPath, 'utf8');
+  const catalogPath = decodedTopString(config, 'model_catalog_json');
+  if (!catalogPath || !fs.existsSync(catalogPath)) return 0;
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  let tuned = 0;
+  for (const model of Array.isArray(catalog.models) ? catalog.models : []) {
+    const settings = tunedModels.get(canonical(model.slug));
+    if (!settings) continue;
+    model.context_window = settings.contextWindow;
+    model.max_context_window = settings.contextWindow;
+    model.effective_context_window_percent = 95;
+    model.default_reasoning_level = settings.defaultReasoning;
+    tuned++;
+  }
+  if (tuned > 0) fs.writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8');
+  return tuned;
 }
 
 function installShortcut(platform = process.platform) {
@@ -130,9 +152,10 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
+  const tunedCatalogModels = tuneCodexCatalog(configPath);
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
   if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
-  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch };
+  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch, tunedCatalogModels };
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
