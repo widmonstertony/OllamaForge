@@ -12,7 +12,7 @@ npm run connect
 
 这相当于打开 Ollama 的 ChatGPT/Codex 集成开关：它调用 Ollama 官方 `launch chatgpt` 配置，把已经安装的本地模型共享到 Codex，并创建桌面快捷方式。该命令不下载模型、不创建模型，也不修改上下文、KV cache 或推理参数。为了兼容旧用法，`npm run deploy` 现在也只执行连接操作。
 
-以后直接双击桌面的“本地 Codex（GUI）”即可。快捷方式会先刷新 Ollama 模型目录，再由 Ollama 自动重启并打开 Codex，不需要手动结束进程。云端模型和本地模型会同时保留在模型选择器中；每个任务可以独立选择模型。
+以后直接双击桌面的“本地 Codex（GUI）”即可。快捷方式会确认或启动 Ollama、刷新模型目录、验证 Codex 接口，然后明确关闭并重新打开 Codex，不需要手动结束进程。云端模型和本地模型会同时保留在模型选择器中；每个任务可以独立选择模型。Windows 双击失败时会显示原因，完整日志位于 `%LOCALAPPDATA%\OllamaForge\shortcut.log`。
 
 指定连接后默认选中的模型：
 
@@ -183,7 +183,7 @@ node test-codex-ollama-adapter.mjs
 npm run test:live
 ```
 
-`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加模型 slug。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`；24 GB 机器首次加载 27B 可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 日志在 `%LOCALAPPDATA%\CodexOllama`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
+`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加模型 slug。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`；24 GB 机器首次加载 27B 可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 适配器日志在 `%LOCALAPPDATA%\CodexOllama`，桌面入口日志在 `%LOCALAPPDATA%\OllamaForge\shortcut.log`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
 
 如果 9B 连续生成无效工具参数，或任务必须使用 OpenAI provider 托管的 built-in tool，请运行 `node macos/local-codex.mjs cloud` 并重启 Codex。云端切换会按完整文本快照恢复进入本地模式前的配置，包括 provider、模型、feature、MCP 设置、注释和原有顺序；macOS/Linux 上快照权限强制为仅当前用户可读写（`0600`）。
 

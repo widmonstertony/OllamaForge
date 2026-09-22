@@ -42,11 +42,14 @@ try {
 
   fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
   calls.length = 0;
+  let restartPlatform = null;
   const launched = connect({ launch: true, noShortcut: true, dependencies: {
     platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'unused',
+    restartCodex: (platform) => { restartPlatform = platform; },
   } });
   assert.equal(launched.launched, true);
-  assert.ok(!calls.at(-1).includes('--config'));
+  assert.ok(calls.at(-1).includes('--config'));
+  assert.equal(restartPlatform, 'win32');
   assert.equal(launched.shortcut, null);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });

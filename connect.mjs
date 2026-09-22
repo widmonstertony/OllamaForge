@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
-import { installDirectShortcut } from './macos/install-direct-shortcut.mjs';
+import { findCodexApplicationName, installDirectShortcut } from './macos/install-direct-shortcut.mjs';
 import { resolveOllamaExecutable } from './setup.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,36 @@ function installShortcut(platform = process.platform) {
   throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
 }
 
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+export function restartCodex(platform = process.platform, dependencies = {}) {
+  const runCommand = dependencies.runCommand ?? run;
+  if (platform === 'win32') {
+    const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    runCommand(powershell, [
+      '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
+      path.join(rootDir, 'Launch-Codex-Connected.ps1'), '-SkipConnect',
+    ]);
+    return;
+  }
+  if (platform === 'darwin') {
+    const applicationName = dependencies.applicationName ?? findCodexApplicationName();
+    runCommand('/usr/bin/osascript', ['-e', `tell application "${applicationName}" to quit`]);
+    const isRunning = () => {
+      const result = spawnSync('/usr/bin/pgrep', ['-x', applicationName], { stdio: 'ignore' });
+      return result.status === 0;
+    };
+    const deadline = Date.now() + 15_000;
+    while (isRunning() && Date.now() < deadline) sleep(250);
+    if (isRunning()) throw new Error(`${applicationName} did not close within 15 seconds.`);
+    runCommand('/usr/bin/open', ['-a', applicationName]);
+    return;
+  }
+  throw new Error(`Unsupported platform: ${platform}.`);
+}
+
 export function connect({ model = null, disconnect = false, launch = false, noShortcut = false, dependencies = {} } = {}) {
   const platform = dependencies.platform ?? process.platform;
   if (!['win32', 'darwin'].includes(platform)) {
@@ -94,15 +124,14 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   if (!primary) {
     throw new Error('No local Ollama model is installed. Pull/import a model first, or run npm run deploy:27b.');
   }
-  const launchArgs = ['launch', 'chatgpt'];
-  if (!launch) launchArgs.push('--config');
-  launchArgs.push('--model', primary, '--yes');
+  const launchArgs = ['launch', 'chatgpt', '--config', '--model', primary, '--yes'];
   runCommand(ollama, launchArgs);
   const configured = fs.readFileSync(configPath, 'utf8');
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
+  if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
   return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch };
 }
 

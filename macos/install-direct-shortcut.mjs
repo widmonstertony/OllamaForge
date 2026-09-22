@@ -22,7 +22,7 @@ export function findCodexApplicationName() {
 }
 
 export function buildDirectShortcut({ nodePath, connectorPath }) {
-  return `#!/bin/zsh\nexec ${shellQuote(nodePath)} ${shellQuote(connectorPath)} --launch --no-shortcut\n`;
+  return `#!/bin/zsh\n${shellQuote(nodePath)} ${shellQuote(connectorPath)} --launch --no-shortcut\n`;
 }
 
 export function installDirectShortcut({
