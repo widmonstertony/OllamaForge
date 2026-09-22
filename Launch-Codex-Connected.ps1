@@ -112,11 +112,20 @@ try {
         $connector = Join-Path $PSScriptRoot 'connect.mjs'
         if (-not (Test-Path -LiteralPath $connector)) { throw "Missing connector: $connector" }
         Write-LauncherLog "Connecting with Node: $node"
-        & $node $connector --no-shortcut 2>&1 | ForEach-Object {
-            Write-Host $_
-            Write-LauncherLog "CONNECT $_"
+        $connectStdout = Join-Path $stateDir 'connect.stdout.log'
+        $connectStderr = Join-Path $stateDir 'connect.stderr.log'
+        $connectorArgument = '"' + $connector + '"'
+        $connectProcess = Start-Process -FilePath $node -ArgumentList @($connectorArgument, '--no-shortcut') `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $connectStdout -RedirectStandardError $connectStderr
+        foreach ($outputPath in @($connectStdout, $connectStderr)) {
+            if (Test-Path -LiteralPath $outputPath) {
+                Get-Content -LiteralPath $outputPath | ForEach-Object {
+                    Write-Host $_
+                    Write-LauncherLog "CONNECT $_"
+                }
+            }
         }
-        $connectExitCode = $LASTEXITCODE
+        $connectExitCode = $connectProcess.ExitCode
         if ($connectExitCode -ne 0) { throw "Codex connection setup exited with status $connectExitCode." }
     }
 

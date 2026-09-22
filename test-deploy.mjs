@@ -26,8 +26,11 @@ try {
   assert.match(windowsInstaller, /Launch-Codex-Connected\.ps1/);
   assert.doesNotMatch(windowsInstaller, /Launch-Codex-GUI\.ps1/);
   const windowsLauncher = fs.readFileSync(new URL('./Launch-Codex-Connected.ps1', import.meta.url), 'utf8');
-  assert.match(windowsLauncher, /\$connector --no-shortcut/);
+  assert.match(windowsLauncher, /ArgumentList @\(\$connectorArgument, '--no-shortcut'\)/);
   assert.match(windowsLauncher, /Stop-Process -Id/);
+  assert.match(windowsLauncher, /RedirectStandardOutput/);
+  assert.match(windowsLauncher, /\$connectProcess\.ExitCode/);
+  assert.doesNotMatch(windowsLauncher, /--no-shortcut 2>&1/);
   assert.match(windowsLauncher, /api\/codex\/v1\/models/);
   assert.match(windowsLauncher, /shortcut\.log/);
   assert.match(windowsLauncher, /shell:AppsFolder/);
