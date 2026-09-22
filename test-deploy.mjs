@@ -10,7 +10,7 @@ assert.equal(TARGET.sha256, '89434f23dc89c5f990894e3fe9fdad19d88c370f0d3638a176f
 assert.equal(OLLAMA_ENV.OLLAMA_KV_CACHE_TYPE, 'q4_0');
 assert.equal(OLLAMA_ENV.OLLAMA_CONTEXT_LENGTH, '110000');
 assert.equal(OLLAMA_ENV.OLLAMA_NUM_PARALLEL, '1');
-assert.match(buildDirectShortcut('Codex'), /open -a 'Codex'/);
+assert.match(buildDirectShortcut({ nodePath: '/usr/local/bin/node', connectorPath: '/repo/connect.mjs' }), /connect\.mjs' --launch --no-shortcut/);
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-deploy-'));
 try {
@@ -23,9 +23,10 @@ try {
   if (process.platform !== 'win32') assert.equal(fs.statSync(shortcut).mode & 0o777, 0o755);
 
   const windowsInstaller = fs.readFileSync(new URL('./Install-WindowsShortcuts.ps1', import.meta.url), 'utf8');
-  assert.match(windowsInstaller, /127\.0\.0\.1|11434/);
-  assert.match(windowsInstaller, /shell:AppsFolder\\OpenAI\.Codex/);
+  assert.match(windowsInstaller, /Launch-Codex-Connected\.ps1/);
   assert.doesNotMatch(windowsInstaller, /Launch-Codex-GUI\.ps1/);
+  const windowsLauncher = fs.readFileSync(new URL('./Launch-Codex-Connected.ps1', import.meta.url), 'utf8');
+  assert.match(windowsLauncher, /connect\.mjs'\) --launch --no-shortcut/);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

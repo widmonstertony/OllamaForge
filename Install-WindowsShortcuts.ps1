@@ -3,14 +3,15 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$explorer = Join-Path $env:SystemRoot 'explorer.exe'
+$powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$launcher = Join-Path $PSScriptRoot 'Launch-Codex-Connected.ps1'
 $shell = New-Object -ComObject WScript.Shell
 $entries = @(
     @{
         Name = '本地 Codex（GUI）'
-        Target = $explorer
-        Arguments = 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App'
-        Description = '打开 Codex，通过 Ollama 11434 原生网关选择本地模型'
+        Target = $powerShell
+        Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $launcher + '"'
+        Description = '刷新 Ollama 模型并自动重启 Codex；云端和本地模型均可选择'
     }
 )
 foreach ($entry in $entries) {

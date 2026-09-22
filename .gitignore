@@ -30,6 +30,7 @@
 !Launch-Codex-GUI.ps1
 !Restore-Codex-Cloud.ps1
 !Install-WindowsShortcuts.ps1
+!Launch-Codex-Connected.ps1
 !Codex-Agent.ps1
 !macos/
 macos/*

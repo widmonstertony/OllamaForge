@@ -22,15 +22,18 @@ function run(command, args, { stdio = 'inherit' } = {}) {
 }
 
 export function parseArgs(args) {
-  const options = { model: null, disconnect: false };
+  const options = { model: null, disconnect: false, launch: false, noShortcut: false };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--disconnect') options.disconnect = true;
+    else if (argument === '--launch') options.launch = true;
+    else if (argument === '--no-shortcut') options.noShortcut = true;
     else if (argument === '--model') options.model = args[++index];
     else if (argument.startsWith('--model=')) options.model = argument.slice('--model='.length);
     else throw new Error(`Unknown argument: ${argument}`);
   }
   if (options.disconnect && options.model) throw new Error('--disconnect cannot be combined with --model.');
+  if (options.disconnect && options.launch) throw new Error('--disconnect cannot be combined with --launch.');
   if (args.includes('--model') && !options.model) throw new Error('--model requires a model name.');
   return options;
 }
@@ -68,7 +71,7 @@ function installShortcut(platform = process.platform) {
   throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
 }
 
-export function connect({ model = null, disconnect = false, dependencies = {} } = {}) {
+export function connect({ model = null, disconnect = false, launch = false, noShortcut = false, dependencies = {} } = {}) {
   const platform = dependencies.platform ?? process.platform;
   if (!['win32', 'darwin'].includes(platform)) {
     throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
@@ -91,13 +94,16 @@ export function connect({ model = null, disconnect = false, dependencies = {} } 
   if (!primary) {
     throw new Error('No local Ollama model is installed. Pull/import a model first, or run npm run deploy:27b.');
   }
-  runCommand(ollama, ['launch', 'chatgpt', '--config', '--model', primary, '--yes']);
+  const launchArgs = ['launch', 'chatgpt'];
+  if (!launch) launchArgs.push('--config');
+  launchArgs.push('--model', primary, '--yes');
+  runCommand(ollama, launchArgs);
   const configured = fs.readFileSync(configPath, 'utf8');
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
-  const shortcut = dependencies.installShortcut?.() ?? installShortcut(platform);
-  return { disconnected: false, primary, installed, endpoint, shortcut };
+  const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
+  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch };
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
@@ -112,8 +118,10 @@ if (isDirectRun) {
       console.log(`Endpoint: ${result.endpoint}`);
       console.log(`Default local model: ${result.primary}`);
       console.log(`Shared local models: ${result.installed.join(', ')}`);
-      console.log(`Desktop shortcut: ${result.shortcut}`);
-      console.log('Quit and reopen Codex to load the shared Ollama models.');
+      if (result.shortcut) console.log(`Desktop shortcut: ${result.shortcut}`);
+      console.log(result.launched
+        ? 'Codex was refreshed and opened with the shared cloud and local model catalog.'
+        : 'Use the desktop shortcut to refresh and open Codex with the shared model catalog.');
     }
   } catch (error) {
     console.error(`Connection failed: ${error.message}`);

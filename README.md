@@ -12,6 +12,8 @@ npm run connect
 
 这相当于打开 Ollama 的 ChatGPT/Codex 集成开关：它调用 Ollama 官方 `launch chatgpt` 配置，把已经安装的本地模型共享到 Codex，并创建桌面快捷方式。该命令不下载模型、不创建模型，也不修改上下文、KV cache 或推理参数。为了兼容旧用法，`npm run deploy` 现在也只执行连接操作。
 
+以后直接双击桌面的“本地 Codex（GUI）”即可。快捷方式会先刷新 Ollama 模型目录，再由 Ollama 自动重启并打开 Codex，不需要手动结束进程。云端模型和本地模型会同时保留在模型选择器中；每个任务可以独立选择模型。
+
 指定连接后默认选中的模型：
 
 ```sh
@@ -24,7 +26,11 @@ npm run connect -- --model qwen3.5:9b
 npm run disconnect
 ```
 
-连接完成后彻底退出并重新打开 Codex，即可在模型选择器看到 Ollama 已安装的本地模型。
+也可以从终端执行同样的一键刷新和启动：
+
+```sh
+npm run launch
+```
 
 ## 可选：下载并配置 27B IQ4_XS
 

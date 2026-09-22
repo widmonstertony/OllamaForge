@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const shortcutName = '本地 Codex（Ollama 直连）.command';
+const rootDir = fileURLToPath(new URL('..', import.meta.url));
 
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -20,18 +21,23 @@ export function findCodexApplicationName() {
   return application.name;
 }
 
-export function buildDirectShortcut(applicationName) {
-  return `#!/bin/zsh\nexec /usr/bin/open -a ${shellQuote(applicationName)}\n`;
+export function buildDirectShortcut({ nodePath, connectorPath }) {
+  return `#!/bin/zsh\nexec ${shellQuote(nodePath)} ${shellQuote(connectorPath)} --launch --no-shortcut\n`;
 }
 
 export function installDirectShortcut({
   desktopDir = process.env.OLLAMA_FORGE_DESKTOP || path.join(os.homedir(), 'Desktop'),
+  nodePath = process.execPath,
+  connectorPath = path.join(rootDir, 'connect.mjs'),
   applicationName = findCodexApplicationName(),
 } = {}) {
+  // Validate the app now so a broken shortcut is never installed.
+  if (!applicationName) throw new Error('Codex application name is required.');
+  if (!fs.existsSync(connectorPath)) throw new Error(`Missing Codex connector: ${connectorPath}`);
   fs.mkdirSync(desktopDir, { recursive: true });
   const shortcutPath = path.join(desktopDir, shortcutName);
   const temporaryPath = `${shortcutPath}.tmp-${process.pid}`;
-  fs.writeFileSync(temporaryPath, buildDirectShortcut(applicationName), { encoding: 'utf8', mode: 0o700 });
+  fs.writeFileSync(temporaryPath, buildDirectShortcut({ nodePath, connectorPath }), { encoding: 'utf8', mode: 0o700 });
   fs.renameSync(temporaryPath, shortcutPath);
   fs.chmodSync(shortcutPath, 0o755);
   return shortcutPath;
