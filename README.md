@@ -2,6 +2,30 @@
 
 在 ChatGPT/Codex 桌面 GUI 中使用本机 Ollama 模型，同时保留原有云端配置。仓库只包含适配器、模型目录和启动脚本；不包含模型权重、账号、个人配置快照或运行日志。
 
+## 一键部署 27B IQ4_XS（推荐）
+
+适用于 Windows 和 macOS。先安装 Git、Node.js 24+、Ollama，并至少打开一次 ChatGPT/Codex，然后在仓库目录运行：
+
+```sh
+npm run deploy
+```
+
+该命令自动完成以下步骤：
+
+1. 从 Hugging Face 下载 `Qwen3.8-27B-IQ4_XS-3.84bpw.gguf`，支持断点续传，并用固定 SHA-256 校验完整性。
+2. 持久化 Ollama 配置：110K 上下文、Q4_0 K/V cache、Flash Attention、单并发。
+3. 重启 Ollama，创建 `qwen3.8-codex-iq4-xs-110k`，并用 `draft_num_predict 0` 关闭 MTP。
+4. 通过 Ollama 原生 `http://127.0.0.1:11434/api/codex/v1` 网关把模型加入 Codex，同时保留原有云端默认模型。
+5. 创建桌面快捷方式，并发送 `PING` 做真实直连验收。
+
+模型约 12.18 GiB；首次部署还需要导入和运行空间，建议至少预留 16 GiB。下载中断后再次运行同一命令即可续传。部署完成后彻底退出并重新打开 Codex，在模型选择器中选择 `qwen3.8-codex-iq4-xs-110k`。
+
+若只想完成配置而跳过首次模型推理验收，可运行：
+
+```sh
+npm run deploy -- --skip-smoke
+```
+
 ## macOS / Windows 一键接入
 
 安装 Git、Node.js 24+、Ollama，并至少打开一次 ChatGPT/Codex 后，在仓库目录运行同一条命令：
@@ -12,6 +36,9 @@ npm run setup -- --model 9b
 
 # 或者下载并接入约 18 GB 的 Qwen 3.8 27B
 npm run setup -- --model 27b
+
+# 使用 models 目录中已有的 27B IQ4_XS GGUF，接入 110K Codex 模型
+npm run setup -- --model 27b-iq4-xs --no-pull
 ```
 
 PowerShell 中命令完全相同。脚本只下载所选模型、创建对应的 16K Codex 别名、调用 Ollama 的 ChatGPT 集成，然后把运行前的 Ollama 云端或 OpenAI 模型恢复为默认模型。本地模型会同时出现在选择器里。完成后请彻底退出并重新打开 ChatGPT/Codex。
@@ -24,6 +51,8 @@ npm run setup -- --model 9b
 ```
 
 模型权重保存在每台电脑自己的 Ollama 目录，永远不会提交到 Git。重复配置且模型已经下载时可加 `--no-pull`；如果模型不存在，该选项会安全报错而不会下载。
+
+`27b-iq4-xs` 要求仓库中存在 `models/Qwen3.8-27B-IQ4_XS-3.84bpw.gguf`。对应 Modelfile 将上下文设为 110,000、将 `draft_num_predict` 设为 0 以关闭 MTP。Q4 KV cache 是 Ollama 服务级配置；Windows 上设置用户环境变量 `OLLAMA_FLASH_ATTENTION=1`、`OLLAMA_KV_CACHE_TYPE=q4_0`、`OLLAMA_CONTEXT_LENGTH=110000` 和 `OLLAMA_NUM_PARALLEL=1` 后，需要重启 Ollama。
 
 ## 行为
 

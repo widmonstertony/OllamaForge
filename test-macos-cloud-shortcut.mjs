@@ -19,10 +19,10 @@ try {
   });
   const content = fs.readFileSync(shortcut, 'utf8');
   assert.equal(path.basename(shortcut), '云端 Codex.command');
-  assert.equal(fs.statSync(shortcut).mode & 0o777, 0o755);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(shortcut).mode & 0o777, 0o755);
   assert.match(content, /^#!\/bin\/zsh\n/);
   assert.match(content, /'\/opt\/node with spaces\/bin\/node'/);
-  assert.match(content, /'\/.*repo with spaces\/macos\/local-codex\.mjs'; then/);
+  assert.match(content, /'[^'\n]*repo with spaces[\\/]macos[\\/]local-codex\.mjs'; then/);
   assert.match(content, /tell application "Codex" to quit/);
   assert.match(content, /open -a 'Codex'/);
   assert.match(content, /恢复云端默认，并保留 Ollama 本地模型/);

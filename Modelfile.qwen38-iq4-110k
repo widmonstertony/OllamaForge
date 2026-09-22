@@ -1,0 +1,4 @@
+FROM ./models/Qwen3.8-27B-IQ4_XS-3.84bpw.gguf
+PARAMETER num_ctx 110000
+PARAMETER num_predict 8192
+PARAMETER draft_num_predict 0

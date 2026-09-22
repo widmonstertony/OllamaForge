@@ -32,6 +32,12 @@ export const MODEL_SPECS = Object.freeze({
     modelfile: 'Modelfile.codex-qwen-16k',
     minimumFreeGiB: 24,
   }),
+  '27b-iq4-xs': Object.freeze({
+    choice: '27b-iq4-xs',
+    alias: 'qwen3.8-codex-iq4-xs-110k',
+    localFile: path.join('models', 'Qwen3.8-27B-IQ4_XS-3.84bpw.gguf'),
+    modelfile: 'Modelfile.qwen38-iq4-110k',
+  }),
 });
 
 export function parseArgs(args) {
@@ -44,7 +50,7 @@ export function parseArgs(args) {
     else if (argument.startsWith('--model=')) options.model = argument.slice('--model='.length);
     else throw new Error(`Unknown argument: ${argument}`);
   }
-  if (!MODEL_SPECS[options.model]) throw new Error('--model must be 9b or 27b.');
+  if (!MODEL_SPECS[options.model]) throw new Error('--model must be 9b, 27b, or 27b-iq4-xs.');
   return options;
 }
 
@@ -152,7 +158,12 @@ export function runSetup(options, dependencies = {}) {
   const capability = runCapture(ollama, ['launch', 'chatgpt', '--help']);
   assertCommandSucceeded(capability, 'Ollama ChatGPT integration check');
 
-  if (!modelExists(ollama, spec.base, runCapture)) {
+  if (spec.localFile) {
+    const localFile = path.join(rootDir, spec.localFile);
+    if (!fs.existsSync(localFile)) {
+      throw new Error(`Local model file not found: ${localFile}`);
+    }
+  } else if (!modelExists(ollama, spec.base, runCapture)) {
     if (options.noPull) {
       throw new Error(`${spec.base} is not installed and --no-pull was requested.`);
     }
@@ -167,7 +178,7 @@ export function runSetup(options, dependencies = {}) {
     runInherit(ollama, ['pull', spec.base]);
   }
 
-  if (!modelExists(ollama, spec.alias, runCapture)) {
+  if (spec.localFile || !modelExists(ollama, spec.alias, runCapture)) {
     const modelfile = path.join(rootDir, spec.modelfile);
     if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
     runInherit(ollama, ['create', spec.alias, '-f', modelfile]);
@@ -228,7 +239,7 @@ export function runSetup(options, dependencies = {}) {
 }
 
 function printHelp() {
-  console.log(`Usage: npm run setup -- --model <9b|27b> [--no-pull]\n\n` +
+  console.log(`Usage: npm run setup -- --model <9b|27b|27b-iq4-xs> [--no-pull]\n\n` +
     `Downloads only the selected model, configures Ollama for ChatGPT/Codex,\n` +
     `and restores the existing cloud model as the default.`);
 }

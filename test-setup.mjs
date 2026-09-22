@@ -15,10 +15,12 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 assert.deepEqual(parseArgs(['--model', '27b', '--no-pull']), { model: '27b', noPull: true, help: false });
 assert.deepEqual(parseArgs(['--model=9b']), { model: '9b', noPull: false, help: false });
-assert.throws(() => parseArgs(['--model', '70b']), /9b or 27b/);
+assert.deepEqual(parseArgs(['--model=27b-iq4-xs']), { model: '27b-iq4-xs', noPull: false, help: false });
+assert.throws(() => parseArgs(['--model', '70b']), /27b-iq4-xs/);
 assert.equal(MODEL_SPECS['9b'].base, 'qwen3.5:9b');
 assert.equal(MODEL_SPECS['27b'].base, 'qwen3.8:27b');
 assert.equal(MODEL_SPECS['27b'].minimumFreeGiB, 24);
+assert.equal(MODEL_SPECS['27b-iq4-xs'].alias, 'qwen3.8-codex-iq4-xs-110k');
 
 assert.equal(resolveOllamaExecutable({
   platform: 'darwin',
@@ -178,6 +180,22 @@ function cleanup(harness) {
       .find((entry) => entry.slug === 'qwen3.8-codex-16k');
     assert.equal(qualityAlias.default_reasoning_level, 'none');
     assert.deepEqual(qualityAlias.supported_reasoning_levels.map((entry) => entry.effort), ['none', 'medium']);
+  } finally {
+    cleanup(harness);
+  }
+}
+
+{
+  const harness = createHarness({ defaultModel: 'gpt-5.6-sol' });
+  try {
+    const result = runSetup({ model: '27b-iq4-xs', noPull: true }, harness.dependencies);
+    assert.ok(harness.installed.has('qwen3.8-codex-iq4-xs-110k'));
+    assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
+    const local = JSON.parse(fs.readFileSync(harness.catalogPath, 'utf8')).models
+      .find((entry) => entry.slug === 'qwen3.8-codex-iq4-xs-110k');
+    assert.equal(local.context_window, 110000);
+    assert.equal(local.max_context_window, 110000);
+    assert.equal(result.cloudDefault, 'gpt-5.6-sol');
   } finally {
     cleanup(harness);
   }

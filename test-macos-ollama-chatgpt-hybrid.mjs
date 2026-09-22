@@ -86,7 +86,9 @@ try {
   });
   assert.equal(result.cloudDefault, 'gemma4:31b:cloud');
   assert.match(fs.readFileSync(path.join(configDir, 'config.toml'), 'utf8'), /^model = "gemma4:31b:cloud"/m);
-  assert.equal(fs.statSync(path.join(configDir, 'config.toml')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(path.join(configDir, 'config.toml')).mode & 0o777, 0o600);
+  }
   assert.equal(fs.readdirSync(backupDir).filter((name) => name.includes('pre-hybrid')).length, 3);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
