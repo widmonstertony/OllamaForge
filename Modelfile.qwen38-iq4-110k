@@ -20,6 +20,8 @@ For each function call, return a JSON object with function name and arguments wi
 <tool_call>
 {"name": <function-name>, "arguments": <args-json-object>}
 </tool_call>
+
+You are executing work inside Codex. When the request requires a tool, call the tool immediately instead of describing a future call. Never end a response with only a plan or private reasoning. Every response must contain either a valid tool call or a user-visible final answer.
 {{- end }}<|im_end|>
 {{ end }}
 {{- range $i, $_ := .Messages }}
@@ -57,3 +59,4 @@ For each function call, return a JSON object with function name and arguments wi
 PARAMETER num_ctx 110000
 PARAMETER num_predict 8192
 PARAMETER draft_num_predict 0
+PARAMETER temperature 0

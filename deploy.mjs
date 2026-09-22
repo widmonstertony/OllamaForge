@@ -226,7 +226,38 @@ async function smokeTest() {
   if (!toolResponse.ok || call?.name !== 'ping' || JSON.parse(call.arguments ?? '{}').value !== 'ok') {
     throw new Error(`Codex tool smoke test failed (${toolResponse.status}): ${JSON.stringify(toolPayload).slice(0, 1000)}`);
   }
-  return { output, tool: call.name, seconds: ((Date.now() - started) / 1000).toFixed(1) };
+  const autonomousResponse = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: TARGET.alias,
+      input: [{
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: 'Inspect free disk space. Use exec_command now; do not only describe a plan.',
+        }],
+      }],
+      tools: [{
+        type: 'function', name: 'exec_command', description: 'Run a PowerShell command.', strict: true,
+        parameters: {
+          type: 'object', properties: { cmd: { type: 'string' } },
+          required: ['cmd'], additionalProperties: false,
+        },
+      }],
+      parallel_tool_calls: false,
+      reasoning: { effort: 'none' },
+      max_output_tokens: 512,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(600_000),
+  });
+  const autonomousPayload = await autonomousResponse.json();
+  const autonomousCall = autonomousPayload.output?.find((item) => item.type === 'function_call');
+  if (!autonomousResponse.ok || autonomousCall?.name !== 'exec_command' || !JSON.parse(autonomousCall.arguments ?? '{}').cmd) {
+    throw new Error(`Codex autonomous tool smoke test failed (${autonomousResponse.status}): ${JSON.stringify(autonomousPayload).slice(0, 1000)}`);
+  }
+  return { output, tool: call.name, autonomousTool: autonomousCall.name, seconds: ((Date.now() - started) / 1000).toFixed(1) };
 }
 
 function sleep(milliseconds) {
@@ -261,7 +292,7 @@ if (isDirectRun) {
     console.log(`Long-context model: ${TARGET.longContextAlias}`);
     console.log('Codex endpoint: http://127.0.0.1:11434/api/codex/v1');
     console.log(`Desktop shortcut: ${result.shortcut}`);
-    if (result.smoke) console.log(`Smoke test: ${result.smoke.output} + ${result.smoke.tool} tool (${result.smoke.seconds}s)`);
+    if (result.smoke) console.log(`Smoke test: ${result.smoke.output} + ${result.smoke.tool} + autonomous ${result.smoke.autonomousTool} (${result.smoke.seconds}s)`);
     console.log('Quit and reopen Codex. Use qwen3.8-codex-iq4-xs-64k daily; select qwen3.8-codex-iq4-xs-110k only for very large tasks.');
   } catch (error) {
     console.error(`Deployment failed: ${error.message}`);

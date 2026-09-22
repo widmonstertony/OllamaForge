@@ -19,11 +19,15 @@ assert.match(iq4Modelfile, /TEMPLATE """/);
 assert.match(iq4Modelfile, /range .*\.Messages/);
 assert.match(iq4Modelfile, /range \.Tools/);
 assert.doesNotMatch(iq4Modelfile, /System message must be at the beginning/);
+assert.match(iq4Modelfile, /Never end a response with only a plan or private reasoning/);
+assert.match(iq4Modelfile, /PARAMETER temperature 0/);
 assert.match(iq4DailyModelfile, /PARAMETER num_ctx 65536/);
 assert.match(iq4DailyModelfile, /PARAMETER draft_num_predict 0/);
+assert.match(iq4DailyModelfile, /Never end a response with only a plan or private reasoning/);
 const deploySource = fs.readFileSync(new URL('./deploy.mjs', import.meta.url), 'utf8');
 assert.match(deploySource, /This second system message verifies Codex compatibility/);
 assert.match(deploySource, /Codex tool smoke test failed/);
+assert.match(deploySource, /Codex autonomous tool smoke test failed/);
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-deploy-'));
 try {

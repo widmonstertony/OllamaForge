@@ -15,7 +15,9 @@ const models = requestedModels.length > 0 ? requestedModels : ['qwen3.5-codex-fa
 const responsesUrl = process.env.CODEX_RESPONSES_URL || 'http://127.0.0.1:11435/v1/responses';
 const timeoutMs = Number(process.env.CODEX_TEST_TIMEOUT_MS || 180_000);
 const textTokenLimit = Number(process.env.CODEX_TEST_TEXT_TOKENS || 48);
-const toolTokenLimit = Number(process.env.CODEX_TEST_TOOL_TOKENS || 128);
+// Real shell calls often need more than 128 tokens for the command JSON plus tool tags.
+// Ollama drops an incomplete auto-selected call as an empty assistant message.
+const toolTokenLimit = Number(process.env.CODEX_TEST_TOOL_TOKENS || 512);
 
 function requestHeaders(url) {
   if (!new URL(url).pathname.includes('/api/codex/')) return {};
@@ -112,5 +114,42 @@ for (const model of models) {
   assert.equal(toolCall.name, 'ping');
   assert.equal(toolCall.namespace, 'self_test');
   assert.equal(JSON.parse(toolCall.arguments).value, 'ok');
-  console.log(`${model}: text and namespaced tool call passed in ${(Date.now() - started) / 1000}s.`);
+
+  const autonomousToolResponse = await postJson(responsesUrl, {
+    model,
+    reasoning: { effort },
+    input: [{
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: 'Inspect the free disk space on this computer. Use exec_command now. Do not answer from memory or only describe a plan.',
+      }],
+    }],
+    tools: [{
+      type: 'namespace',
+      name: 'computer',
+      tools: [{
+        type: 'function',
+        name: 'exec_command',
+        description: 'Run a PowerShell command on the local computer.',
+        parameters: {
+          type: 'object',
+          properties: { cmd: { type: 'string' } },
+          required: ['cmd'],
+          additionalProperties: false,
+        },
+      }],
+    }],
+    parallel_tool_calls: false,
+    stream: false,
+    max_output_tokens: toolTokenLimit,
+  });
+  const autonomousPayload = autonomousToolResponse.payload;
+  assert.equal(autonomousToolResponse.status, 200, `${model} autonomous tool call: ${JSON.stringify(autonomousPayload)}`);
+  const autonomousCall = autonomousPayload.output?.find((item) => item.type === 'function_call');
+  assert.ok(autonomousCall, `${model}: returned reasoning/plan without an autonomous tool call: ${JSON.stringify(autonomousPayload)}`);
+  assert.equal(autonomousCall.name, 'exec_command');
+  assert.equal(autonomousCall.namespace, 'computer');
+  assert.ok(JSON.parse(autonomousCall.arguments).cmd, `${model}: exec_command did not include cmd`);
+  console.log(`${model}: text, forced tool, and autonomous tool calls passed in ${(Date.now() - started) / 1000}s.`);
 }
