@@ -20,7 +20,8 @@ assert.throws(() => parseArgs(['--model', '70b']), /27b-iq4-xs/);
 assert.equal(MODEL_SPECS['9b'].base, 'qwen3.5:9b');
 assert.equal(MODEL_SPECS['27b'].base, 'qwen3.8:27b');
 assert.equal(MODEL_SPECS['27b'].minimumFreeGiB, 24);
-assert.equal(MODEL_SPECS['27b-iq4-xs'].alias, 'qwen3.8-codex-iq4-xs-110k');
+assert.equal(MODEL_SPECS['27b-iq4-xs'].alias, 'qwen3.8-codex-iq4-xs-64k');
+assert.equal(MODEL_SPECS['27b-iq4-xs'].companionModels[0].alias, 'qwen3.8-codex-iq4-xs-110k');
 
 assert.equal(resolveOllamaExecutable({
   platform: 'darwin',
@@ -189,10 +190,15 @@ function cleanup(harness) {
   const harness = createHarness({ defaultModel: 'gpt-5.6-sol' });
   try {
     const result = runSetup({ model: '27b-iq4-xs', noPull: true }, harness.dependencies);
+    assert.ok(harness.installed.has('qwen3.8-codex-iq4-xs-64k'));
     assert.ok(harness.installed.has('qwen3.8-codex-iq4-xs-110k'));
     assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
-    const local = JSON.parse(fs.readFileSync(harness.catalogPath, 'utf8')).models
+    const models = JSON.parse(fs.readFileSync(harness.catalogPath, 'utf8')).models;
+    const daily = models.find((entry) => entry.slug === 'qwen3.8-codex-iq4-xs-64k');
+    const local = models
       .find((entry) => entry.slug === 'qwen3.8-codex-iq4-xs-110k');
+    assert.equal(daily.context_window, 65536);
+    assert.equal(daily.max_context_window, 65536);
     assert.equal(local.context_window, 110000);
     assert.equal(local.max_context_window, 110000);
     assert.equal(result.cloudDefault, 'gpt-5.6-sol');

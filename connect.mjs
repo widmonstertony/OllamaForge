@@ -11,6 +11,7 @@ import { resolveOllamaExecutable } from './setup.mjs';
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const endpoint = 'http://127.0.0.1:11434/api/codex/v1';
 const tunedModels = new Map([
+  ['qwen3.8-codex-iq4-xs-64k', { contextWindow: 65_536, defaultReasoning: 'none' }],
   ['qwen3.8-codex-iq4-xs-110k', { contextWindow: 110_000, defaultReasoning: 'none' }],
 ]);
 
@@ -60,7 +61,8 @@ export function selectPrimaryModel(installed, requested, current) {
   }
   const currentMatch = byCanonical.get(canonical(current).toLowerCase());
   if (currentMatch) return currentMatch;
-  const preferred = byCanonical.get('qwen3.8-codex-iq4-xs-110k');
+  const preferred = byCanonical.get('qwen3.8-codex-iq4-xs-64k')
+    ?? byCanonical.get('qwen3.8-codex-iq4-xs-110k');
   return preferred ?? byCanonical.values().next().value ?? null;
 }
 

@@ -7,6 +7,7 @@ import path from 'node:path';
 const effortByModel = new Map([
   ['qwen3.5-codex-fast-16k', 'none'],
   ['qwen3.8-codex-16k', 'none'],
+  ['qwen3.8-codex-iq4-xs-64k', 'none'],
   ['qwen3.8-codex-iq4-xs-110k', 'none'],
 ]);
 const requestedModels = process.argv.slice(2);

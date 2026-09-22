@@ -13,7 +13,8 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export const TARGET = Object.freeze({
   choice: '27b-iq4-xs',
-  alias: 'qwen3.8-codex-iq4-xs-110k',
+  alias: 'qwen3.8-codex-iq4-xs-64k',
+  longContextAlias: 'qwen3.8-codex-iq4-xs-110k',
   relativePath: path.join('models', 'Qwen3.8-27B-IQ4_XS-3.84bpw.gguf'),
   url: 'https://huggingface.co/byteshape/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-IQ4_XS-3.84bpw.gguf?download=true',
   bytes: 13_083_052_416,
@@ -256,11 +257,12 @@ if (isDirectRun) {
     const result = await deploy({ skipSmoke: process.argv.includes('--skip-smoke') });
     console.log('\nDeployment complete.');
     console.log(`Ollama: ${result.version}`);
-    console.log(`Model: ${TARGET.alias}`);
+    console.log(`Daily model: ${TARGET.alias}`);
+    console.log(`Long-context model: ${TARGET.longContextAlias}`);
     console.log('Codex endpoint: http://127.0.0.1:11434/api/codex/v1');
     console.log(`Desktop shortcut: ${result.shortcut}`);
     if (result.smoke) console.log(`Smoke test: ${result.smoke.output} + ${result.smoke.tool} tool (${result.smoke.seconds}s)`);
-    console.log('Quit and reopen Codex, then select qwen3.8-codex-iq4-xs-110k.');
+    console.log('Quit and reopen Codex. Use qwen3.8-codex-iq4-xs-64k daily; select qwen3.8-codex-iq4-xs-110k only for very large tasks.');
   } catch (error) {
     console.error(`Deployment failed: ${error.message}`);
     process.exitCode = 1;

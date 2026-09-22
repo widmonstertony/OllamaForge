@@ -34,9 +34,12 @@ export const MODEL_SPECS = Object.freeze({
   }),
   '27b-iq4-xs': Object.freeze({
     choice: '27b-iq4-xs',
-    alias: 'qwen3.8-codex-iq4-xs-110k',
+    alias: 'qwen3.8-codex-iq4-xs-64k',
     localFile: path.join('models', 'Qwen3.8-27B-IQ4_XS-3.84bpw.gguf'),
-    modelfile: 'Modelfile.qwen38-iq4-110k',
+    modelfile: 'Modelfile.qwen38-iq4-64k',
+    companionModels: Object.freeze([
+      Object.freeze({ alias: 'qwen3.8-codex-iq4-xs-110k', modelfile: 'Modelfile.qwen38-iq4-110k' }),
+    ]),
   }),
 });
 
@@ -182,6 +185,11 @@ export function runSetup(options, dependencies = {}) {
     const modelfile = path.join(rootDir, spec.modelfile);
     if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
     runInherit(ollama, ['create', spec.alias, '-f', modelfile]);
+  }
+  for (const companion of spec.companionModels ?? []) {
+    const modelfile = path.join(rootDir, companion.modelfile);
+    if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
+    runInherit(ollama, ['create', companion.alias, '-f', modelfile]);
   }
 
   const configDir = environment.CODEX_HOME || path.join(homeDir, '.codex');

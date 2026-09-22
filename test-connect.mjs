@@ -11,11 +11,11 @@ assert.deepEqual(parseArgs(['--launch', '--no-shortcut']), { model: null, discon
 assert.throws(() => parseArgs(['--disconnect', '--model=x']), /cannot be combined/);
 
 const installed = parseInstalledModels(
-  'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\nqwen3.8-codex-iq4-xs-110k:latest def 13 GB now\nfoo:cloud ghi - now\n',
+  'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\nqwen3.8-codex-iq4-xs-64k:latest def 13 GB now\nqwen3.8-codex-iq4-xs-110k:latest ghi 13 GB now\nfoo:cloud jkl - now\n',
 );
-assert.deepEqual(installed, ['qwen3.5:9b', 'qwen3.8-codex-iq4-xs-110k:latest']);
+assert.deepEqual(installed, ['qwen3.5:9b', 'qwen3.8-codex-iq4-xs-64k:latest', 'qwen3.8-codex-iq4-xs-110k:latest']);
 assert.equal(selectPrimaryModel(installed, null, 'qwen3.5:9b'), 'qwen3.5:9b');
-assert.equal(selectPrimaryModel(installed, null, 'gpt-cloud'), 'qwen3.8-codex-iq4-xs-110k');
+assert.equal(selectPrimaryModel(installed, null, 'gpt-cloud'), 'qwen3.8-codex-iq4-xs-64k');
 assert.equal(selectPrimaryModel(installed, 'QWEN3.5:9B', null), 'qwen3.5:9b');
 assert.throws(() => selectPrimaryModel(installed, 'missing:7b', null), /not installed/);
 
@@ -53,16 +53,17 @@ try {
   assert.equal(restartPlatform, 'win32');
   assert.equal(launched.shortcut, null);
 
-  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{
-    slug: 'qwen3.8-codex-iq4-xs-110k', context_window: 262144,
-    max_context_window: 262144, effective_context_window_percent: 95,
-    default_reasoning_level: 'high',
-  }] }));
-  assert.equal(tuneCodexCatalog(configPath), 1);
-  const tuned = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models[0];
-  assert.equal(tuned.context_window, 110000);
-  assert.equal(tuned.max_context_window, 110000);
-  assert.equal(tuned.default_reasoning_level, 'none');
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [
+    { slug: 'qwen3.8-codex-iq4-xs-64k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
+    { slug: 'qwen3.8-codex-iq4-xs-110k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
+  ] }));
+  assert.equal(tuneCodexCatalog(configPath), 2);
+  const tuned = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
+  assert.equal(tuned[0].context_window, 65536);
+  assert.equal(tuned[0].max_context_window, 65536);
+  assert.equal(tuned[0].default_reasoning_level, 'none');
+  assert.equal(tuned[1].context_window, 110000);
+  assert.equal(tuned[1].max_context_window, 110000);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

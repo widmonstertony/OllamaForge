@@ -7,15 +7,20 @@ import { buildDirectShortcut, installDirectShortcut } from './macos/install-dire
 
 assert.equal(TARGET.bytes, 13_083_052_416);
 assert.equal(TARGET.sha256, '89434f23dc89c5f990894e3fe9fdad19d88c370f0d3638a176f29933f218b78b');
+assert.equal(TARGET.alias, 'qwen3.8-codex-iq4-xs-64k');
+assert.equal(TARGET.longContextAlias, 'qwen3.8-codex-iq4-xs-110k');
 assert.equal(OLLAMA_ENV.OLLAMA_KV_CACHE_TYPE, 'q4_0');
 assert.equal(OLLAMA_ENV.OLLAMA_CONTEXT_LENGTH, '110000');
 assert.equal(OLLAMA_ENV.OLLAMA_NUM_PARALLEL, '1');
 assert.match(buildDirectShortcut({ nodePath: '/usr/local/bin/node', connectorPath: '/repo/connect.mjs' }), /connect\.mjs' --launch --no-shortcut/);
 const iq4Modelfile = fs.readFileSync(new URL('./Modelfile.qwen38-iq4-110k', import.meta.url), 'utf8');
+const iq4DailyModelfile = fs.readFileSync(new URL('./Modelfile.qwen38-iq4-64k', import.meta.url), 'utf8');
 assert.match(iq4Modelfile, /TEMPLATE """/);
 assert.match(iq4Modelfile, /range .*\.Messages/);
 assert.match(iq4Modelfile, /range \.Tools/);
 assert.doesNotMatch(iq4Modelfile, /System message must be at the beginning/);
+assert.match(iq4DailyModelfile, /PARAMETER num_ctx 65536/);
+assert.match(iq4DailyModelfile, /PARAMETER draft_num_predict 0/);
 const deploySource = fs.readFileSync(new URL('./deploy.mjs', import.meta.url), 'utf8');
 assert.match(deploySource, /This second system message verifies Codex compatibility/);
 assert.match(deploySource, /Codex tool smoke test failed/);

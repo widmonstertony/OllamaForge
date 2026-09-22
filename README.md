@@ -43,12 +43,12 @@ npm run deploy:27b
 这个额外命令自动完成以下步骤：
 
 1. 从 Hugging Face 下载 `Qwen3.8-27B-IQ4_XS-3.84bpw.gguf`，支持断点续传，并用固定 SHA-256 校验完整性。
-2. 持久化 Ollama 配置：110K 上下文、Q4_0 K/V cache、Flash Attention、单并发。
-3. 重启 Ollama，创建 `qwen3.8-codex-iq4-xs-110k`，并用 `draft_num_predict 0` 关闭 MTP。
+2. 持久化 Ollama 配置：最大 110K 上下文、Q4_0 K/V cache、Flash Attention、单并发。
+3. 重启 Ollama，共用同一份权重创建日常 `qwen3.8-codex-iq4-xs-64k` 和长上下文 `qwen3.8-codex-iq4-xs-110k`，并用 `draft_num_predict 0` 关闭 MTP。
 4. 通过 Ollama 原生 `http://127.0.0.1:11434/api/codex/v1` 网关把模型加入 Codex，同时保留原有云端默认模型。
 5. 创建桌面快捷方式，并通过 Codex 网关执行多段 system 指令、`PING` 文本和工具调用验收。
 
-模型约 12.18 GiB；首次部署还需要导入和运行空间，建议至少预留 16 GiB。下载中断后再次运行同一命令即可续传。部署完成后彻底退出并重新打开 Codex，在模型选择器中选择 `qwen3.8-codex-iq4-xs-110k`。
+模型约 12.18 GiB；两个名称复用同一份权重，不会重复占用 12.18 GiB。首次部署还需要导入和运行空间，建议至少预留 16 GiB。下载中断后再次运行同一命令即可续传。部署完成后彻底退出并重新打开 Codex。16GB 显存机器日常选择 `qwen3.8-codex-iq4-xs-64k`；只有任务确实超过 64K 时才选择 `qwen3.8-codex-iq4-xs-110k`。
 
 若需要安装 27B，但想跳过首次模型推理验收，可运行：
 
@@ -67,7 +67,7 @@ npm run setup -- --model 9b
 # 或者下载并接入约 18 GB 的 Qwen 3.8 27B
 npm run setup -- --model 27b
 
-# 使用 models 目录中已有的 27B IQ4_XS GGUF，接入 110K Codex 模型
+# 使用 models 目录中已有的 27B IQ4_XS GGUF，接入 64K 日常和 110K 长上下文两个 Codex 模型
 npm run setup -- --model 27b-iq4-xs --no-pull
 ```
 
@@ -82,7 +82,7 @@ npm run setup -- --model 9b
 
 模型权重保存在每台电脑自己的 Ollama 目录，永远不会提交到 Git。重复配置且模型已经下载时可加 `--no-pull`；如果模型不存在，该选项会安全报错而不会下载。
 
-`27b-iq4-xs` 要求仓库中存在 `models/Qwen3.8-27B-IQ4_XS-3.84bpw.gguf`。对应 Modelfile 将上下文设为 110,000、将 `draft_num_predict` 设为 0 以关闭 MTP。Q4 KV cache 是 Ollama 服务级配置；Windows 上设置用户环境变量 `OLLAMA_FLASH_ATTENTION=1`、`OLLAMA_KV_CACHE_TYPE=q4_0`、`OLLAMA_CONTEXT_LENGTH=110000` 和 `OLLAMA_NUM_PARALLEL=1` 后，需要重启 Ollama。
+`27b-iq4-xs` 要求仓库中存在 `models/Qwen3.8-27B-IQ4_XS-3.84bpw.gguf`。部署会用同一份 GGUF 创建 65,536 和 110,000 两个上下文档位，并将 `draft_num_predict` 设为 0 以关闭 MTP。实测 RTX 4090 Laptop 16GB 上，64K 可 100% GPU 运行，约 34.5 token/s；110K 约 90% GPU，约 22 token/s。Q4 KV cache 是 Ollama 服务级配置；Windows 上设置用户环境变量 `OLLAMA_FLASH_ATTENTION=1`、`OLLAMA_KV_CACHE_TYPE=q4_0`、`OLLAMA_CONTEXT_LENGTH=110000` 和 `OLLAMA_NUM_PARALLEL=1` 后，需要重启 Ollama。
 
 ## 行为
 
@@ -183,7 +183,7 @@ node test-codex-ollama-adapter.mjs
 npm run test:live
 ```
 
-`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加 `qwen3.8-codex-iq4-xs-110k`。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`，测试脚本会读取 Codex 登录凭据但不会输出；27B 首次加载可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 适配器日志在 `%LOCALAPPDATA%\CodexOllama`，桌面入口日志在 `%LOCALAPPDATA%\OllamaForge\shortcut.log`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
+`npm test` 使用本机模拟上游，不消耗模型推理，覆盖模型路由、system 指令、单模型目录、配置回滚、namespace/App/Computer Use 工具桥、历史调用、图片结果、凭据隔离和流式事件。`npm run test:live` 默认用已激活的 9B 运行文本和 namespaced function-call 实测；也可追加 `qwen3.8-codex-iq4-xs-64k` 或 `qwen3.8-codex-iq4-xs-110k`。测试混合模式的原生网关时可设置 `CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses`，测试脚本会读取 Codex 登录凭据但不会输出；27B 首次加载可同时设置 `CODEX_TEST_TIMEOUT_MS=600000`。Windows 适配器日志在 `%LOCALAPPDATA%\CodexOllama`，桌面入口日志在 `%LOCALAPPDATA%\OllamaForge\shortcut.log`；macOS 日志在 `~/.local/state/codex-ollama-agent`。健康端点是 `http://127.0.0.1:11435/health`。
 
 如果 9B 连续生成无效工具参数，或任务必须使用 OpenAI provider 托管的 built-in tool，请运行 `node macos/local-codex.mjs cloud` 并重启 Codex。云端切换会按完整文本快照恢复进入本地模式前的配置，包括 provider、模型、feature、MCP 设置、注释和原有顺序；macOS/Linux 上快照权限强制为仅当前用户可读写（`0600`）。
 

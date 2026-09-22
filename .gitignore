@@ -22,6 +22,7 @@
 !Modelfile.codex-qwen-fast-16k
 !Modelfile.codex-qwen-16k
 !Modelfile.qwen38-iq4-110k
+!Modelfile.qwen38-iq4-64k
 !Start-CodexOllama.ps1
 !Stop-CodexOllama.ps1
 !Watch-CodexOllama.ps1
