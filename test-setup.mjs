@@ -42,9 +42,27 @@ function createHarness({
   installedModels = [],
   freeGiB = 80,
   includeStaleLocal = false,
+  includeLocalModel = false,
   failAfterLaunch = false,
 } = {}) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-setup-'));
+  const repositoryFixture = path.join(work, 'repository');
+  fs.mkdirSync(path.join(repositoryFixture, 'models'), { recursive: true });
+  for (const fixture of [
+    'Modelfile.codex-qwen-fast-16k',
+    'Modelfile.codex-qwen-16k',
+    'Modelfile.qwen38-iq4-64k',
+    'Modelfile.qwen38-iq4-110k',
+    'local-qwen-catalog.json',
+  ]) {
+    fs.copyFileSync(path.join(rootDir, fixture), path.join(repositoryFixture, fixture));
+  }
+  if (includeLocalModel) {
+    fs.writeFileSync(
+      path.join(repositoryFixture, MODEL_SPECS['27b-iq4-xs'].localFile),
+      'test model fixture',
+    );
+  }
   const homeDir = path.join(work, 'home');
   const configDir = path.join(homeDir, '.codex');
   const backupDir = path.join(homeDir, '.ollama', 'backup', 'codex-app');
@@ -128,7 +146,7 @@ function createHarness({
       platform: 'darwin',
       environment: { CODEX_HOME: configDir },
       homeDir,
-      rootDir,
+      rootDir: repositoryFixture,
       backupDir,
       ollamaExecutable: '/mock/ollama',
       runCapture,
@@ -187,7 +205,10 @@ function cleanup(harness) {
 }
 
 {
-  const harness = createHarness({ defaultModel: 'gpt-5.6-sol' });
+  const harness = createHarness({
+    defaultModel: 'gpt-5.6-sol',
+    includeLocalModel: true,
+  });
   try {
     const result = runSetup({ model: '27b-iq4-xs', noPull: true }, harness.dependencies);
     assert.ok(harness.installed.has('qwen3.8-codex-iq4-xs-64k'));
@@ -202,6 +223,18 @@ function cleanup(harness) {
     assert.equal(local.context_window, 110000);
     assert.equal(local.max_context_window, 110000);
     assert.equal(result.cloudDefault, 'gpt-5.6-sol');
+  } finally {
+    cleanup(harness);
+  }
+}
+
+{
+  const harness = createHarness();
+  try {
+    assert.throws(
+      () => runSetup({ model: '27b-iq4-xs', noPull: true }, harness.dependencies),
+      /Local model file not found/,
+    );
   } finally {
     cleanup(harness);
   }
