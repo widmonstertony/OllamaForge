@@ -63,16 +63,19 @@ try {
   assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
 
   fs.writeFileSync(catalogPath, JSON.stringify({ models: [
+    { slug: 'qwen3.8:27b-mlx', context_window: 128000, max_context_window: 128000, default_reasoning_level: 'high' },
     { slug: 'qwen3.8-codex-iq4-xs-64k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
     { slug: 'qwen3.8-codex-iq4-xs-110k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
   ] }));
-  assert.equal(tuneCodexCatalog(configPath), 2);
+  assert.equal(tuneCodexCatalog(configPath), 3);
   const tuned = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
-  assert.equal(tuned[0].context_window, 65536);
-  assert.equal(tuned[0].max_context_window, 65536);
+  assert.equal(tuned[0].context_window, 184320);
+  assert.equal(tuned[0].max_context_window, 184320);
   assert.equal(tuned[0].default_reasoning_level, 'none');
-  assert.equal(tuned[1].context_window, 110000);
-  assert.equal(tuned[1].max_context_window, 110000);
+  assert.equal(tuned[1].context_window, 65536);
+  assert.equal(tuned[1].max_context_window, 65536);
+  assert.equal(tuned[2].context_window, 110000);
+  assert.equal(tuned[2].max_context_window, 110000);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

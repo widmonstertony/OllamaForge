@@ -20,6 +20,17 @@ npm run connect
 npm run connect -- --model qwen3.5:9b
 ```
 
+M4 Pro 48GB 上若已经由 JARVIS 安装了 `qwen3.8:27b-mlx`，直接复用同一份
+18GB 权重，不要再下载 `qwen3.8:27b`：
+
+```sh
+npm run connect -- --model qwen3.8:27b-mlx
+```
+
+仓库会把该模型以 184,320 token 上下文加入 Codex 模型目录，默认关闭额外
+thinking 以获得较快响应；Ollama 仍按单并发运行，因此 JARVIS 与 Codex 同时
+发起请求时会排队，而不会并行抢占统一内存。
+
 关闭集成并恢复 Codex 原生配置：
 
 ```sh

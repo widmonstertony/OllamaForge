@@ -7,6 +7,7 @@ import path from 'node:path';
 const effortByModel = new Map([
   ['qwen3.5-codex-fast-16k', 'none'],
   ['qwen3.5-codex-metal-8k', 'none'],
+  ['qwen3.8:27b-mlx', 'none'],
   ['qwen3.8-codex-16k', 'none'],
   ['qwen3.8-codex-iq4-xs-64k', 'none'],
   ['qwen3.8-codex-iq4-xs-110k', 'none'],
