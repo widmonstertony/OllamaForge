@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
+import { atomicWrite, decodedTopString, setTopValue } from './ollama-chatgpt-hybrid.mjs';
 import { findCodexApplicationName, installDirectShortcut } from './macos/install-direct-shortcut.mjs';
 import { resolveOllamaExecutable } from './setup.mjs';
 
@@ -85,6 +85,20 @@ export function tuneCodexCatalog(configPath) {
   return tuned;
 }
 
+export function preserveSelectedModel(configPath, selectedModel, requestedModel = null) {
+  if (requestedModel || !selectedModel) return false;
+  const config = fs.readFileSync(configPath, 'utf8');
+  const catalogPath = decodedTopString(config, 'model_catalog_json');
+  if (!catalogPath || !fs.existsSync(catalogPath)) return false;
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const selected = canonical(selectedModel).toLowerCase();
+  const selectable = (catalog.models ?? []).some((entry) => canonical(entry.slug).toLowerCase() === selected);
+  if (!selectable) return false;
+  if (canonical(decodedTopString(config, 'model')).toLowerCase() === selected) return true;
+  atomicWrite(configPath, setTopValue(config, 'model', JSON.stringify(selectedModel)));
+  return true;
+}
+
 function installShortcut(platform = process.platform) {
   if (platform === 'win32') {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -155,9 +169,10 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
   const tunedCatalogModels = tuneCodexCatalog(configPath);
+  const selectedModelPreserved = preserveSelectedModel(configPath, current, model);
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
   if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
-  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch, tunedCatalogModels };
+  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch, tunedCatalogModels, selectedModelPreserved };
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);

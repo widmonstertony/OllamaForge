@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connect, parseArgs, parseInstalledModels, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
+import { connect, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
+import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
 assert.deepEqual(parseArgs([]), { model: null, disconnect: false, launch: false, noShortcut: false });
 assert.deepEqual(parseArgs(['--model', 'qwen3.5:9b']), { model: 'qwen3.5:9b', disconnect: false, launch: false, noShortcut: false });
@@ -31,6 +32,10 @@ try {
     if (args[0] === 'list') return { status: 0, stdout: 'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\n' };
     if (args[0] === 'launch') {
       fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
+      fs.writeFileSync(catalogPath, JSON.stringify({ models: [
+        { slug: 'gpt-cloud' },
+        { slug: 'qwen3.5:9b' },
+      ] }));
       return { status: 0 };
     }
     throw new Error(`Unexpected command: ${args.join(' ')}`);
@@ -40,6 +45,9 @@ try {
     platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
   } });
   assert.ok(calls.at(-1).includes('--config'));
+  assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
+
+  assert.equal(preserveSelectedModel(configPath, 'missing-model'), false);
 
   fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
   calls.length = 0;
@@ -52,6 +60,7 @@ try {
   assert.ok(calls.at(-1).includes('--config'));
   assert.equal(restartPlatform, 'win32');
   assert.equal(launched.shortcut, null);
+  assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
 
   fs.writeFileSync(catalogPath, JSON.stringify({ models: [
     { slug: 'qwen3.8-codex-iq4-xs-64k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
