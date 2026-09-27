@@ -1,127 +1,138 @@
 # OllamaForge
 
-把**已经安装在本机 Ollama 中的模型**加入 Codex/ChatGPT 桌面端，同时保留
-原有云端模型。每个 Codex 任务都可以在模型选择器中独立选择本地或云端模型，
-并继续使用 Codex Harness、Skills、Apps、MCP、Browser、Computer Use、Shell、
-文件编辑、沙箱和审批。
+**English** | [简体中文](README.zh-CN.md)
 
-> 默认安装路径永远不会下载模型、创建模型别名或修改 Ollama 的上下文/KV
-> cache。模型由用户自己选择并安装，OllamaForge 只负责安全连接和配置回滚。
+Add models that are **already installed in Ollama** to the Codex/ChatGPT desktop
+app without removing your existing cloud models. Each Codex task can select a
+local or cloud model independently while continuing to use the Codex harness,
+Skills, Apps, MCP, Browser, Computer Use, shell, file editing, sandbox, and
+approval system.
 
-## 支持范围
+> The default setup path never downloads a model, creates a model alias, or
+> changes Ollama context/KV-cache settings. You choose and install the models;
+> OllamaForge only connects them safely and provides configuration rollback.
 
-| 平台 | 状态 | 桌面入口 |
+## Supported platforms
+
+| Platform | Status | Desktop app |
 | --- | --- | --- |
-| macOS | 支持 | `Codex.app` 或 `ChatGPT.app` |
-| Windows 10/11 | 支持 | Microsoft Store/桌面版 Codex |
-| Linux | 不提供桌面 GUI 集成 | 可使用 Ollama/Codex CLI，但不属于本仓库的一键桌面流程 |
+| macOS | Supported | `Codex.app` or `ChatGPT.app` |
+| Windows 10/11 | Supported | Microsoft Store/desktop Codex app |
+| Linux | No desktop GUI integration | Ollama/Codex CLI can still be used, but it is outside this repository's one-command desktop workflow |
 
-要求：
+Requirements:
 
-- Node.js 24 或更新版本；
-- 当前版 Ollama，且支持 `ollama launch chatgpt`；
-- 已登录并至少打开过一次 Codex/ChatGPT，使 `~/.codex/config.toml` 存在；
-- 至少一个由用户自己安装或导入的本地 Ollama 模型。
+- Node.js 24 or newer;
+- a current Ollama release with `ollama launch chatgpt` support;
+- Codex/ChatGPT opened and signed in at least once so `~/.codex/config.toml` exists;
+- at least one local Ollama model that you installed or imported yourself.
 
-本仓库没有 npm 依赖，clone 后不需要先运行 `npm install`。
+This repository has no npm dependencies. You do not need to run `npm install`
+after cloning it.
 
-## 三步开始
+## Start in three steps
 
-### 1. 确认本地模型
+### 1. Check your local models
 
 ```sh
 ollama list
 ```
 
-如果列表为空，请先自行选择并安装模型。OllamaForge 不会替用户决定或静默下载。
+If the list is empty, choose and install a model first. OllamaForge will not
+choose one for you or silently download one.
 
-### 2. 克隆仓库
+### 2. Clone the repository
 
 ```sh
 git clone https://github.com/widmonstertony/OllamaForge.git
 cd OllamaForge
 ```
 
-### 3. 连接 Codex
+### 3. Connect Codex
 
 ```sh
 npm run setup
 ```
 
-这条命令会：
+This command:
 
-1. 检查 Ollama、Codex 配置和已安装模型；
-2. 调用 Ollama 官方 ChatGPT/Codex 集成生成本地模型目录；
-3. 保留连接前的云端模型、默认模型、Reasoning 设置、Apps 和插件配置；
-4. 把所有可用的本地模型加入同一个 Codex 模型选择器；
-5. 创建平台对应的桌面快捷方式；
-6. 在任何失败时保留或恢复原配置。
+1. checks Ollama, the Codex configuration, and installed models;
+2. calls Ollama's official ChatGPT/Codex integration to generate a local model catalog;
+3. preserves the existing cloud models, default model, reasoning settings, Apps, and plugin configuration;
+4. adds all available local models to the same Codex model picker;
+5. creates the appropriate desktop shortcut for the platform;
+6. preserves or restores the original configuration if anything fails.
 
-它不会下载模型。完成后彻底退出并重新打开 Codex，随后直接在每个任务的模型
-选择器中选择本地或云端模型。
+It does not download models. Fully quit and reopen Codex when setup finishes,
+then choose a local or cloud model from the model picker in each task.
 
-## 模型选择
+## Choosing a model
 
-先查看 OllamaForge 能发现的本地模型：
+List the local models OllamaForge can discover:
 
 ```sh
 npm run models
 ```
 
-默认运行 `npm run setup` 时，当前云端默认模型会保持不变，所有本地模型成为
-可选项。若希望下一次打开 Codex 时默认突出某个本地模型，可以明确指定其
-`ollama list` 中的完整名称：
+By default, `npm run setup` preserves the current cloud default and makes every
+local model selectable. To make a particular installed local model the initial
+selection the next time Codex opens, pass its exact name from `ollama list`:
 
 ```sh
 npm run setup -- --model qwen3.8:27b-mlx
 ```
 
-`--model` 只接受已经安装的精确模型名；不存在时立即报错，不会 pull。
+`--model` accepts only an exact, already-installed model name. A missing model
+causes an immediate error and is never pulled automatically.
 
-连接完成后无需反复运行 setup。直接在 Codex 模型选择器中按任务切换即可：
+You do not need to repeat setup after the connection is established. Switch per
+task in the Codex model picker:
 
-- 本地模型：推理由 Ollama 在本机执行；
-- 云端模型：仍使用原有云端服务；
-- Codex Harness 与工具执行层保持不变。
+- local model: inference runs locally through Ollama;
+- cloud model: the existing cloud service continues to handle inference;
+- the Codex harness and tool-execution layer remain available in either case.
 
-## 常用命令
+## Commands
 
-| 命令 | 行为 | 下载模型 |
+| Command | Behavior | Downloads a model |
 | --- | --- | --- |
-| `npm run setup` | 首次连接现有模型并安装快捷方式 | 否 |
-| `npm run models` | 只列出本地模型，不修改配置 | 否 |
-| `npm run refresh` | 模型安装/删除后刷新 Codex 目录 | 否 |
-| `npm run launch` | 刷新目录并重启 Codex | 否 |
-| `npm run disconnect` | 恢复连接前配置，不删除权重 | 否 |
-| `npm test` | 跨平台离线测试 | 否 |
-| `npm run test:live -- <模型名>` | 真实文本与工具调用验收 | 否 |
+| `npm run setup` | Connect installed models and install a shortcut | No |
+| `npm run models` | List local models without modifying configuration | No |
+| `npm run refresh` | Refresh the Codex catalog after adding/removing models | No |
+| `npm run launch` | Refresh the catalog and restart Codex | No |
+| `npm run disconnect` | Restore the pre-connection configuration without deleting weights | No |
+| `npm test` | Run cross-platform offline tests | No |
+| `npm run test:live -- <model-name>` | Test real text and tool calls | No |
 
-为了兼容旧版本，`npm run connect` 和 `npm run deploy` 都等同于安全的
-`npm run setup`，不会下载模型。
+For compatibility with older versions, `npm run connect` and `npm run deploy`
+are safe aliases of `npm run setup`; neither downloads a model.
 
 ## macOS
 
-`npm run setup` 会在桌面创建：
+`npm run setup` creates this desktop shortcut:
 
 ```text
 本地 Codex（Ollama 直连）.command
 ```
 
-双击它会确认 Ollama、刷新模型目录、关闭并重新打开 Codex。它不是“只能使用
-本地模型”的开关；重启后本地和云端模型仍同时出现在模型选择器中。
+Double-clicking it checks Ollama, refreshes the model catalog, quits Codex, and
+opens it again. It is not a local-only mode: both local and cloud models remain
+in the model picker after restart.
 
-Apple Silicon 上已经安装 `qwen3.8:27b-mlx` 时，可直接复用同一份权重：
+If `qwen3.8:27b-mlx` is already installed on Apple Silicon, reuse those weights
+directly:
 
 ```sh
 npm run setup -- --model qwen3.8:27b-mlx
 ```
 
-仓库会把该已知模型在 Codex 目录中的上下文标记为 184,320，并把默认
-Reasoning 设为 `none`；不会更改 Ollama 服务的真实运行参数。
+For this known model, OllamaForge marks the Codex catalog context as 184,320 and
+sets the default reasoning level to `none`. It does not change the actual Ollama
+runtime parameters.
 
 ## Windows
 
-在 PowerShell 中执行与 macOS 相同的命令：
+Run the same commands in PowerShell:
 
 ```powershell
 git clone https://github.com/widmonstertony/OllamaForge.git
@@ -130,66 +141,73 @@ npm run models
 npm run setup
 ```
 
-桌面会生成“本地 Codex（GUI）”。双击后会启动/确认 Ollama、刷新所有已安装
-模型、验证原生 Codex endpoint，然后重启 Codex。完整日志位于：
+Setup creates a desktop shortcut named `本地 Codex（GUI）`. It starts or checks
+Ollama, refreshes all installed models, validates the native Codex endpoint, and
+restarts Codex. The complete log is stored at:
 
 ```text
 %LOCALAPPDATA%\OllamaForge\shortcut.log
 ```
 
-Windows 与 macOS 使用同一混合目录逻辑：云端模型不会因为加入本地模型而消失。
+Windows and macOS use the same hybrid catalog logic. Adding local models does
+not remove cloud models.
 
-## Qwen3.8 27B 建议
+## Qwen3.8 27B guidance
 
-- 48GB Apple Silicon：`qwen3.8:27b-mlx` 可以直接复用；
-- 16GB GPU：优先选择能够完整放入显存的量化版本；
-- 上下文越大，KV cache 占用和首轮预填充时间越高；
-- 多个 Codex/JARVIS 请求共享单个 Ollama 实例时可能排队，这是预期行为。
+- 48 GB Apple Silicon: an existing `qwen3.8:27b-mlx` installation can be reused directly;
+- 16 GB GPU: prefer a quantization that fits completely in VRAM;
+- larger context windows increase KV-cache use and first-turn prefill time;
+- multiple Codex/JARVIS requests sharing one Ollama instance may queue, which is expected.
 
-OllamaForge 不把某一个模型硬编码为必需项。任意已安装模型都可以进入目录，
-但模型能否稳定规划工具取决于它自身的 tool-calling 能力。
+OllamaForge does not hard-code one required model. Any installed model can enter
+the catalog, but reliable tool planning still depends on that model's own
+tool-calling capability.
 
-## 可选：显式准备仓库别名
+## Optional: explicitly prepare repository aliases
 
-只有确实需要仓库提供的 Qwen 模板/别名时才运行：
+Run these only if you specifically need the Qwen templates/aliases provided by
+this repository:
 
 ```sh
 npm run prepare:alias -- --model 9b
 npm run prepare:alias -- --model 27b
 ```
 
-这两条命令仍然**不会下载**基础模型；缺少 `qwen3.5:9b` 或 `qwen3.8:27b`
-时会停止并提示用户先自行安装。
+These commands still **do not download** the base model. If `qwen3.5:9b` or
+`qwen3.8:27b` is missing, they stop and ask you to install it yourself.
 
-仓库还保留一个明确命名的高级下载器：
+The repository also retains an explicitly named advanced downloader:
 
 ```sh
 npm run download:27b
 ```
 
-它会下载约 12.18GiB 的指定 IQ4_XS GGUF、校验固定 SHA-256，并创建 64K/
-110K 两个别名。它不是默认 setup 的一部分；只有用户主动执行这条带
-`download` 的命令才会联网下载大模型。旧别名 `npm run deploy:27b` 仍保留兼容。
+It downloads the specified approximately 12.18 GiB IQ4_XS GGUF, verifies a
+pinned SHA-256 checksum, and creates 64K and 110K aliases. It is not part of the
+default setup. A model is downloaded only when you deliberately run this
+`download` command. The old `npm run deploy:27b` name remains as a compatibility
+alias.
 
-## 隐私边界
+## Privacy boundaries
 
-- 选择本地模型时，模型推理请求发送到 `127.0.0.1:11434`；
-- 选择云端模型时，对话上下文会按原有云端 Provider 的规则离开本机；
-- Browser、邮件、远程 MCP 和网站工具本身仍可能访问外部服务；
-- OllamaForge 不提交模型权重、Codex 登录信息、个人配置快照或运行日志；
-- 适配器不会把 Codex 的 OAuth/API 凭据转发给本地模型。
+- with a local model selected, inference requests go to `127.0.0.1:11434`;
+- with a cloud model selected, conversation context leaves the machine according to that provider's existing rules;
+- Browser, email, remote MCP, and website tools may still access external services;
+- OllamaForge does not commit model weights, Codex login data, personal configuration snapshots, or runtime logs;
+- the adapter does not forward Codex OAuth/API credentials to the local model.
 
-“本地模型”描述的是推理位置，不代表整个工具任务完全离线。
+“Local model” describes where inference runs. It does not mean that an entire
+tool-enabled task is offline.
 
-## 验证与故障排查
+## Verification and troubleshooting
 
-离线回归测试：
+Offline regression suite:
 
 ```sh
 npm test
 ```
 
-真实 Codex/Ollama 网关验收：
+Live Codex/Ollama gateway test:
 
 ```sh
 CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses \
@@ -197,7 +215,7 @@ CODEX_TEST_TIMEOUT_MS=600000 \
 npm run test:live -- qwen3.8:27b-mlx
 ```
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 $env:CODEX_RESPONSES_URL='http://127.0.0.1:11434/api/codex/v1/responses'
@@ -205,38 +223,39 @@ $env:CODEX_TEST_TIMEOUT_MS='600000'
 npm run test:live -- qwen3.8:27b-mlx
 ```
 
-常见问题：
+Common problems:
 
-- `No local Ollama model is installed`：先自行安装模型，再运行 `npm run setup`；
-- `Codex config not found`：先登录并打开一次 Codex；
-- 模型选择器未刷新：彻底退出 Codex，再双击桌面快捷方式；
-- 更新或删除模型后目录仍旧：运行 `npm run refresh`；
-- 想完全撤销集成：运行 `npm run disconnect` 后重启 Codex；
-- Windows 双击失败：查看 `%LOCALAPPDATA%\OllamaForge\shortcut.log`。
+- `No local Ollama model is installed`: install a model yourself, then run `npm run setup`;
+- `Codex config not found`: sign in and open Codex once first;
+- model picker did not refresh: fully quit Codex, then double-click the desktop shortcut;
+- catalog is stale after adding/removing a model: run `npm run refresh`;
+- completely undo the integration: run `npm run disconnect`, then restart Codex;
+- Windows shortcut failed: inspect `%LOCALAPPDATA%\OllamaForge\shortcut.log`.
 
-## 工作原理
+## How it works
 
 ```text
 Codex Desktop / Harness
           │
-          ├── 云端模型（保留原有路由）
+          ├── cloud models (existing route preserved)
           │
           └── Ollama Codex gateway
                     │
-                    └── 本机已安装模型
+                    └── installed local models
 ```
 
-Ollama 原生 endpoint 为：
+Ollama's native endpoint is:
 
 ```text
 http://127.0.0.1:11434/api/codex/v1
 ```
 
-配置变更前的文件会备份到每台机器自己的：
+Files changed by the connection are backed up on each machine under:
 
 ```text
 ~/.ollama/backup/codex-app
 ```
 
-所有服务仅绑定回环地址。模型列表刷新不会删除 Ollama 权重；恢复云端配置也不会
-卸载本地模型。
+All services bind only to loopback. Refreshing the model catalog does not delete
+Ollama weights, and restoring the cloud configuration does not uninstall local
+models.

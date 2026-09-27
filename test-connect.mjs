@@ -6,7 +6,12 @@ import { connect, parseArgs, parseInstalledModels, preserveSelectedModel, select
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
 const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-const readme = fs.readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+const readmes = [
+  fs.readFileSync(new URL('./README.md', import.meta.url), 'utf8'),
+  fs.readFileSync(new URL('./README.zh-CN.md', import.meta.url), 'utf8'),
+];
+assert.match(readmes[0], /\[简体中文\]\(README\.zh-CN\.md\)/);
+assert.match(readmes[1], /\[English\]\(README\.md\)/);
 assert.equal(packageJson.scripts.setup, 'node connect.mjs');
 assert.equal(packageJson.scripts.connect, 'node connect.mjs');
 assert.equal(packageJson.scripts.models, 'node connect.mjs --list');
@@ -14,11 +19,14 @@ assert.equal(packageJson.scripts.refresh, 'node connect.mjs');
 assert.equal(packageJson.scripts['download:27b'], 'node deploy.mjs');
 assert.ok(!packageJson.scripts.setup.includes('deploy.mjs'));
 assert.ok(!packageJson.scripts.setup.includes('setup.mjs'));
-const documentedScripts = [...readme.matchAll(/npm run ([a-z0-9:_-]+)/gi)].map((match) => match[1]);
+const documentedScriptSets = readmes.map((readme) =>
+  [...new Set([...readme.matchAll(/npm run ([a-z0-9:_-]+)/gi)].map((match) => match[1]))].sort());
+assert.deepEqual(documentedScriptSets[0], documentedScriptSets[1], 'Both README languages must document the same npm commands.');
+const documentedScripts = documentedScriptSets.flat();
 assert.deepEqual(
   [...new Set(documentedScripts)].filter((name) => !packageJson.scripts[name]),
   [],
-  'Every npm command in README.md must exist in package.json.',
+  'Every npm command in both README languages must exist in package.json.',
 );
 
 assert.deepEqual(parseArgs([]), { model: null, disconnect: false, launch: false, noShortcut: false, list: false });

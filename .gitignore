@@ -2,6 +2,7 @@
 !.gitignore
 !.gitattributes
 !README.md
+!README.zh-CN.md
 !package.json
 !codex-ollama-adapter.mjs
 !run-codex-ollama-adapter.mjs
