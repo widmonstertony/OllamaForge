@@ -11,6 +11,7 @@ const contextWindow = Number.isInteger(requestedContextWindow) && requestedConte
 const providerName = process.env.CODEX_LOCAL_PROVIDER_NAME ?? 'Local Qwen via Ollama';
 const cloudModel = process.env.CODEX_CLOUD_MODEL?.trim() || '';
 const cloudReasoningEffort = process.env.CODEX_CLOUD_REASONING_EFFORT?.trim() || '';
+const localPlatform = process.env.CODEX_LOCAL_PLATFORM || process.platform;
 const managedKeys = ['model', 'model_reasoning_effort', 'model_provider', 'model_catalog_json', 'openai_base_url', 'developer_instructions', 'tool_output_token_limit'];
 const managedTables = {
   features: ['plugins', 'apps', 'browser_use', 'image_generation', 'multi_agent'],
@@ -192,6 +193,16 @@ if (action === 'status') {
   }
   fs.writeFileSync(localCatalogPath, `${JSON.stringify({ models: entries }, null, 2)}\n`, 'utf8');
 
+  const metalMode = localModel === 'qwen3.5-codex-metal-8k';
+  const platformInstruction = localPlatform === 'win32'
+    ? 'Local Windows runtime. Shell tool commands already use PowerShell: pass native PowerShell directly; never wrap commands in pwsh or powershell -Command. '
+    : 'Local macOS runtime. Use native macOS/POSIX shell commands and paths. ';
+  const filesystemInstruction = metalMode
+    ? 'Batch independent read-only checks into one tool call. Reuse existing results after context compaction and never repeat completed checks. ' +
+      'For macOS disk analysis, check free space and the main folders under the current user once; never recursively run du on /, /Users, /System, /private, or /var. ' +
+      'Treat useful output as partial success even if a command exits nonzero, then summarize. Prefer concise tool output.'
+    : 'For filesystem analysis, scan large candidate folders once, avoid repeated full-drive recursive scans, and report partial results or access errors. ' +
+      'Prefer concise tool output and provide progress on slow work.';
   let text = removeManagedProvider(current);
   text = setTopValues(text, {
     model: JSON.stringify(localModel),
@@ -202,14 +213,9 @@ if (action === 'status') {
     model_catalog_json: JSON.stringify(localCatalogPath),
     openai_base_url: null,
     tool_output_token_limit: localModel === 'qwen3.5-codex-metal-8k' ? '1200' : '2500',
-    developer_instructions: JSON.stringify((process.platform === 'win32'
-      ? 'Local Windows runtime. Shell tool commands already use PowerShell: pass native PowerShell directly; never wrap commands in pwsh or powershell -Command. '
-      : 'Local macOS runtime. Use native macOS/POSIX shell commands and paths. ') +
-      'Batch independent read-only checks into one tool call. Reuse existing results after context compaction and never repeat completed checks. ' +
-      'For macOS disk analysis, check free space and the main folders under the current user once; never recursively run du on /, /Users, /System, /private, or /var. ' +
-      'Treat useful output as partial success even if a command exits nonzero, then summarize. Prefer concise tool output.'),
+    developer_instructions: JSON.stringify(platformInstruction + filesystemInstruction),
   });
-  if (current.includes('[mcp_servers.ios_mcp]')) {
+  if (metalMode && current.includes('[mcp_servers.ios_mcp]')) {
     text = setTableValues(text, 'mcp_servers.ios_mcp', { enabled: 'false' });
   }
   const newline = text.includes('\r\n') ? '\r\n' : '\n';

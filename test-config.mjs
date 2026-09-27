@@ -43,11 +43,21 @@ try {
   assert.match(text, /image_generation = false/);
   assert.match(text, /multi_agent = true/);
   assert.match(text, /\[mcp_servers\.node_repl\]\nenabled = true/);
-  assert.match(text, /\[mcp_servers\.ios_mcp\]\nenabled = false/);
+  assert.doesNotMatch(text, /For macOS disk analysis/);
+  assert.doesNotMatch(text, /\[mcp_servers\.ios_mcp\]\nenabled = false/);
+
+  run('local', 'qwen3.5-codex-fast-16k', ['qwen3.5-codex-fast-16k'], {
+    CODEX_LOCAL_PLATFORM: 'win32',
+  });
+  text = fs.readFileSync(config, 'utf8');
+  assert.match(text, /Local Windows runtime/);
+  assert.match(text, /pass native PowerShell directly/);
+  assert.doesNotMatch(text, /For macOS disk analysis/);
 
   run('local', 'qwen3.5-codex-metal-8k', ['qwen3.5-codex-metal-8k'], {
     CODEX_LOCAL_CONTEXT_WINDOW: '8192',
     CODEX_LOCAL_PROVIDER_NAME: 'Local Qwen via Radeon Metal',
+    CODEX_LOCAL_PLATFORM: 'darwin',
   });
   text = fs.readFileSync(config, 'utf8');
   const metalModels = JSON.parse(fs.readFileSync(catalog, 'utf8')).models;
@@ -61,6 +71,7 @@ try {
   assert.match(text, /^tool_output_token_limit = 1200$/m);
   assert.match(text, /Reuse existing results after context compaction/);
   assert.match(text, /never recursively run du on/);
+  assert.match(text, /\[mcp_servers\.ios_mcp\]\nenabled = false/);
   assert.match(text, /name = "Local Qwen via Radeon Metal"/);
 
   run('local', 'qwen3.8-codex-16k', ['qwen3.8-codex-16k']);
