@@ -153,9 +153,13 @@ try {
   });
   assert.equal(guardedDiskScan.status, 200);
   const guardedCommand = JSON.parse((await guardedDiskScan.json()).output[0].arguments).cmd;
-  assert.match(guardedCommand, /\$HOME.*Downloads/);
-  assert.doesNotMatch(guardedCommand, /du[^\n]* \/Users(?:\s|$)/);
-  assert.doesNotMatch(guardedCommand, /du[^\n]* \/System(?:\s|$)/);
+  if (process.platform === 'darwin') {
+    assert.match(guardedCommand, /\$HOME.*Downloads/);
+    assert.doesNotMatch(guardedCommand, /du[^\n]* \/Users(?:\s|$)/);
+    assert.doesNotMatch(guardedCommand, /du[^\n]* \/System(?:\s|$)/);
+  } else {
+    assert.equal(guardedCommand, 'du -sh / /Users /System /private /var /Applications 2>/dev/null');
+  }
 
   const delegatedMessage = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
     method: 'POST',
