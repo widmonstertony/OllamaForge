@@ -176,6 +176,25 @@ npm run setup -- --model 9b --no-pull
 
 脚本会在尚未安装基础模型时进行磁盘空间预检：9B 至少需要约 9 GiB 可用空间，27B 至少需要约 24 GiB。首次切换后请先用一条短消息验证请求，再运行长任务。
 
+### Intel Mac Radeon Metal
+
+已经安装 LeetTutor 固定版 `llama.cpp b10240` 后，可把同一个 `qwen3.5:9b` Ollama blob 直接部署到 Radeon Metal，并连接 Codex：
+
+```sh
+npm run deploy:macos-metal
+npm run install:macos-metal-shortcuts
+```
+
+Metal 服务监听 `127.0.0.1:11436`，Codex Responses/工具适配器监听 `127.0.0.1:11435`。Codex 中的模型名是 `qwen3.5-codex-metal-8k`，默认关闭长思考。桌面的“本地 Codex”直接启用服务和配置；“云端 Codex”停止 Metal 服务并恢复 OpenAI 配置。云端切换会读取 Codex 桌面端最近使用的非本地模型及推理档位，例如 `gpt-5.6-sol / high`，避免无模型快照落到不兼容的默认模型或继续使用本地 Qwen。两个入口都不要求输入 `yes`，仅在失败时等待回车以便阅读错误。
+
+这套 8K 配置面向 Radeon Pro 5600M 8GB。Metal 模型只暴露“无额外思考”档位；即使旧任务保留了中等档位，适配器也会转成快速模式。默认只把命令、进程续接、文件修改和图片查看四种核心工具发给模型，明确选择的 App 或浏览器工具仍会按需加入；用户要求直接回答时不发送工具定义。这样可以减少首次请求的输入量。
+
+磁盘分析会合并独立检查、复用已有结果，并在取得足够数据后停止。适配器会拦截模型生成的 `/`、`/Users`、`/System`、`/private` 或 `/var` 全量 `du` 扫描，改为一次用户常用目录检查。进入本地模式时还会停用已配置但离线的 `ios_mcp`，切回云端会从原始配置快照恢复。
+
+首次新任务仍需处理 Codex 固定提示；同一任务后续轮次可以复用 prompt cache，生成速度明显快于 CPU Ollama。
+
+Codex 的本地 Responses 后端不能可靠保存 `previous_response_id` 对应的内容，因此适配器会在本机保存滚动会话历史，并在下一轮显式补回用户输入、助手回答和工具结果。历史文件位于 `~/Library/Application Support/LocalCodexMetal/response-history.json`，权限为 `0600`；默认最多保留约 3000 个估算 token 和最近 64 个 response id，以免超过 8K 上下文。切换前已经由旧 Ollama provider 创建的任务无法补回当时已丢失的后端历史，请在 Metal 模型下新建任务。
+
 ## 故障检查与测试
 
 ```sh

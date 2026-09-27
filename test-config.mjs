@@ -12,13 +12,13 @@ const snapshot = path.join(work, 'cloud.json');
 const catalog = path.join(work, 'catalog.json');
 const source = path.join(root, 'local-qwen-catalog.json');
 const helper = path.join(root, 'codex-mode-config.mjs');
-const original = 'model = "gpt-cloud"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = true\napps = true\nbrowser_use = true\nimage_generation = false\nmulti_agent = true\n\n[mcp_servers.node_repl]\nenabled = true\n\n[model_providers.other]\nbase_url = "https://example.test/v1"\n';
+const original = 'model = "gpt-cloud"\nmodel_reasoning_effort = "high"\n\n[features]\nplugins = true\napps = true\nbrowser_use = true\nimage_generation = false\nmulti_agent = true\n\n[mcp_servers.node_repl]\nenabled = true\n\n[mcp_servers.ios_mcp]\nurl = "http://192.168.68.99:8090/mcp"\n\n[model_providers.other]\nbase_url = "https://example.test/v1"\n';
 fs.writeFileSync(config, original);
 
-function run(action, model, selectedModels = []) {
+function run(action, model, selectedModels = [], environment = {}) {
   const result = spawnSync(process.execPath,
     [helper, action, config, snapshot, source, catalog, ...(model ? [model, ...selectedModels] : [])],
-    { encoding: 'utf8' });
+    { encoding: 'utf8', env: { ...process.env, ...environment } });
   assert.equal(result.status, 0, result.stderr);
 }
 
@@ -43,6 +43,25 @@ try {
   assert.match(text, /image_generation = false/);
   assert.match(text, /multi_agent = true/);
   assert.match(text, /\[mcp_servers\.node_repl\]\nenabled = true/);
+  assert.match(text, /\[mcp_servers\.ios_mcp\]\nenabled = false/);
+
+  run('local', 'qwen3.5-codex-metal-8k', ['qwen3.5-codex-metal-8k'], {
+    CODEX_LOCAL_CONTEXT_WINDOW: '8192',
+    CODEX_LOCAL_PROVIDER_NAME: 'Local Qwen via Radeon Metal',
+  });
+  text = fs.readFileSync(config, 'utf8');
+  const metalModels = JSON.parse(fs.readFileSync(catalog, 'utf8')).models;
+  assert.equal(metalModels[0].slug, 'qwen3.5-codex-metal-8k');
+  assert.equal(metalModels[0].context_window, 8192);
+  assert.equal(metalModels[0].auto_compact_token_limit, 5734);
+  assert.equal(metalModels[0].include_apps_usage_instructions, false);
+  assert.equal(metalModels[0].include_plugin_usage_instructions, false);
+  assert.equal(metalModels[0].include_skills_usage_instructions, false);
+  assert.deepEqual(metalModels[0].supported_reasoning_levels.map((level) => level.effort), ['none']);
+  assert.match(text, /^tool_output_token_limit = 1200$/m);
+  assert.match(text, /Reuse existing results after context compaction/);
+  assert.match(text, /never recursively run du on/);
+  assert.match(text, /name = "Local Qwen via Radeon Metal"/);
 
   run('local', 'qwen3.8-codex-16k', ['qwen3.8-codex-16k']);
   text = fs.readFileSync(config, 'utf8');
@@ -61,6 +80,17 @@ try {
   assert.match(text, /apps = true/);
   assert.match(text, /browser_use = true/);
   assert.match(text, /\[mcp_servers\.node_repl\]\nenabled = true/);
+
+  run('local', 'qwen3.5-codex-fast-16k', ['qwen3.5-codex-fast-16k']);
+  run('cloud', undefined, [], {
+    CODEX_CLOUD_MODEL: 'gpt-5.6-sol',
+    CODEX_CLOUD_REASONING_EFFORT: 'high',
+  });
+  text = fs.readFileSync(config, 'utf8');
+  assert.match(text, /^model = "gpt-5\.6-sol"$/m);
+  assert.match(text, /^model_reasoning_effort = "high"$/m);
+  assert.doesNotMatch(text, /^model_provider =/m);
+  assert.doesNotMatch(text, /\[model_providers\.local_qwen\]/);
 
   const minimalOriginal = 'model = "gpt-cloud"\n\n[model_providers.other]\nbase_url = "https://example.test/v1"\n';
   fs.writeFileSync(config, minimalOriginal);

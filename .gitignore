@@ -39,6 +39,9 @@ macos/*
 !macos/install-cloud-shortcut.mjs
 !macos/ollama-chatgpt-hybrid.mjs
 !macos/install-direct-shortcut.mjs
+!macos/metal-codex.mjs
+!macos/install-metal-shortcuts.mjs
+!test-macos-metal.mjs
 !.github/
 .github/*
 !.github/workflows/

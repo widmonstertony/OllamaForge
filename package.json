@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs",
+    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs",
     "connect": "node connect.mjs",
     "launch": "node connect.mjs --launch --no-shortcut",
     "disconnect": "node connect.mjs --disconnect",
@@ -14,6 +14,9 @@
     "install:macos-cloud-shortcut": "node macos/install-cloud-shortcut.mjs",
     "install:macos-direct-shortcut": "node macos/install-direct-shortcut.mjs",
     "enable:macos-hybrid": "node macos/ollama-chatgpt-hybrid.mjs",
+    "deploy:macos-metal": "node macos/metal-codex.mjs local",
+    "restore:macos-metal": "node macos/metal-codex.mjs cloud",
+    "install:macos-metal-shortcuts": "node macos/install-metal-shortcuts.mjs",
     "test:live": "node test-live-ollama.mjs"
   },
   "engines": {

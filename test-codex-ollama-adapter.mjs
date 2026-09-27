@@ -31,6 +31,31 @@ const upstream = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
+  if (testMode === 'history-first') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      id: 'history-response-1',
+      output: [{
+        type: 'message',
+        id: 'history-message-1',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'Remember 7391.' }],
+      }],
+    }));
+    return;
+  }
+  if (testMode === 'dangerous-du') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      id: 'dangerous-du-response',
+      output: [{
+        type: 'function_call', id: 'fc_du', call_id: 'call_du', name: 'exec_command',
+        arguments: JSON.stringify({ cmd: 'du -sh / /Users /System /private /var /Applications 2>/dev/null' }),
+      }],
+    }));
+    return;
+  }
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ id: 'test-response', output: [] }));
 });
@@ -108,6 +133,80 @@ try {
   const fastWithoutHeader = await send('qwen3.5-codex-fast-16k', 'none', null);
   assert.equal(fastWithoutHeader.body.model, 'qwen3.5-codex-fast-16k');
 
+  const metal = await send('qwen3.5-codex-metal-8k', 'medium', null);
+  assert.equal(metal.body.reasoning.effort, 'none');
+  assert.match(metal.body.input[0].content[0].text, /Combine independent read-only shell checks/);
+  assert.match(metal.body.input[0].content[0].text, /never repeat a completed check/);
+  assert.match(metal.body.input[0].content[0].text, /useful stdout is partial success/);
+  assert.match(metal.body.input[0].content[0].text, /never recursively run du on/);
+  assert.equal(metal.body.input[0].content[0].text.includes('Developer instruction'), false);
+  assert.equal(metal.body.tools.length, 0);
+
+  const guardedDiskScan = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-test-mode': 'dangerous-du' },
+    body: JSON.stringify({
+      model: 'qwen3.5-codex-metal-8k',
+      input: 'Analyze disk usage',
+      tools: [{ type: 'function', name: 'exec_command' }],
+    }),
+  });
+  assert.equal(guardedDiskScan.status, 200);
+  const guardedCommand = JSON.parse((await guardedDiskScan.json()).output[0].arguments).cmd;
+  assert.match(guardedCommand, /\$HOME.*Downloads/);
+  assert.doesNotMatch(guardedCommand, /du[^\n]* \/Users(?:\s|$)/);
+  assert.doesNotMatch(guardedCommand, /du[^\n]* \/System(?:\s|$)/);
+
+  const delegatedMessage = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'qwen3.5-codex-metal-8k',
+      input: [{
+        type: 'function_call_output', name: 'send_message_to_thread', namespace: 'codex_app',
+        output: '<codex_delegation><input>Stop all tool calls. Use existing results and answer.</input></codex_delegation>',
+      }],
+      tools: [{ type: 'function', name: 'exec_command' }],
+    }),
+  });
+  assert.equal(delegatedMessage.status, 200);
+  await delegatedMessage.json();
+  const delegatedInput = incoming.at(-1).body.input[1];
+  assert.equal(delegatedInput.type, 'message');
+  assert.equal(delegatedInput.role, 'user');
+  assert.match(delegatedInput.content[0].text, /Use existing results and answer/);
+  assert.equal(incoming.at(-1).body.tools.length, 0);
+
+  const historyFirst = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-test-mode': 'history-first' },
+    body: JSON.stringify({
+      model: 'qwen3.5-codex-metal-8k',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Remember 7391.' }] }],
+    }),
+  });
+  assert.equal(historyFirst.status, 200);
+  const historyFirstPayload = await historyFirst.json();
+  assert.equal(historyFirstPayload.id, 'history-response-1');
+
+  const historySecond = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'qwen3.5-codex-metal-8k',
+      previous_response_id: 'history-response-1',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'What number?' }] }],
+    }),
+  });
+  assert.equal(historySecond.status, 200);
+  await historySecond.json();
+  const historyIncoming = incoming.at(-1).body;
+  assert.equal('previous_response_id' in historyIncoming, false);
+  assert.equal(historyIncoming.input[1].content[0].text, 'Remember 7391.');
+  assert.equal(historyIncoming.input[2].role, 'assistant');
+  assert.equal(historyIncoming.input[2].content[0].text, 'Remember 7391.');
+  assert.equal(historyIncoming.input[3].content[0].text, 'What number?');
+
   const bridgeResponse = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-test-mode': 'json-call' },
@@ -179,6 +278,25 @@ try {
   assert.equal(streamEvents[2].response.output[0].namespace, 'browser');
   const streamWireName = incoming.at(-1).body.tools[0].name;
   assert.equal(streamText.includes(streamWireName), false, streamText);
+
+  const streamHistoryFollowUp = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'qwen3.5-codex-fast-16k',
+      previous_response_id: 'test-stream',
+      input: [{ type: 'function_call_output', call_id: 'call_stream', output: 'opened' }],
+      tools: [{ type: 'namespace', name: 'browser', tools: [
+        { type: 'function', name: 'open', description: 'Open a URL', parameters: { type: 'object' } },
+      ] }],
+    }),
+  });
+  assert.equal(streamHistoryFollowUp.status, 200);
+  await streamHistoryFollowUp.json();
+  const streamHistoryIncoming = incoming.at(-1).body;
+  assert.equal(streamHistoryIncoming.input[1].content[0].text, 'Open the test page');
+  assert.equal(streamHistoryIncoming.input[2].type, 'function_call');
+  assert.equal(streamHistoryIncoming.input[3].type, 'function_call_output');
 
   console.log('PASS: model routing, reasoning, namespace/App/CUA bridge, history, images, credentials, and streaming output translation.');
 } finally {

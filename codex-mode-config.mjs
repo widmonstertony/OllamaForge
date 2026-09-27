@@ -4,10 +4,18 @@ import path from 'node:path';
 const [action, configPath, statePath, sourceCatalogPath, localCatalogPath, requestedModel, ...selectedModelArgs] = process.argv.slice(2);
 const providerId = 'local_qwen';
 const localModel = requestedModel ?? 'qwen3.5-codex-fast-16k';
+const requestedContextWindow = Number.parseInt(process.env.CODEX_LOCAL_CONTEXT_WINDOW ?? '16384', 10);
+const contextWindow = Number.isInteger(requestedContextWindow) && requestedContextWindow >= 4096
+  ? requestedContextWindow
+  : 16384;
+const providerName = process.env.CODEX_LOCAL_PROVIDER_NAME ?? 'Local Qwen via Ollama';
+const cloudModel = process.env.CODEX_CLOUD_MODEL?.trim() || '';
+const cloudReasoningEffort = process.env.CODEX_CLOUD_REASONING_EFFORT?.trim() || '';
 const managedKeys = ['model', 'model_reasoning_effort', 'model_provider', 'model_catalog_json', 'openai_base_url', 'developer_instructions', 'tool_output_token_limit'];
 const managedTables = {
   features: ['plugins', 'apps', 'browser_use', 'image_generation', 'multi_agent'],
   'mcp_servers.node_repl': ['enabled'],
+  'mcp_servers.ios_mcp': ['enabled'],
 };
 
 if (!['snapshot', 'local', 'cloud', 'rollback', 'status'].includes(action) || !configPath || !statePath) {
@@ -30,6 +38,14 @@ function topValues(text) {
 
 function isLocal(text) {
   return topValues(text).model_provider === JSON.stringify(providerId);
+}
+
+function applyCloudSelection(text) {
+  if (!cloudModel) return text;
+  const values = topValues(text);
+  values.model = JSON.stringify(cloudModel);
+  if (cloudReasoningEffort) values.model_reasoning_effort = JSON.stringify(cloudReasoningEffort);
+  return setTopValues(text, values);
 }
 
 function setTopValues(text, values) {
@@ -132,28 +148,41 @@ if (action === 'status') {
     ? [...new Set(selectedModelArgs)]
     : ['qwen3.5-codex-fast-16k', 'qwen3.8-codex-16k'];
   const entries = localModels.flatMap((slug) => {
-    const source = catalog.models?.find((model) => model.slug === slug || model.slug === `${slug}:latest`);
+    const source = catalog.models?.find((model) => model.slug === slug || model.slug === `${slug}:latest`) ??
+      (slug === 'qwen3.5-codex-metal-8k'
+        ? catalog.models?.find((model) => model.slug === 'qwen3.5-codex-fast-16k')
+        : null);
     if (!source) return [];
     const entry = { ...source };
     entry.slug = slug;
     entry.display_name = slug;
-    entry.context_window = 16384;
-    entry.max_context_window = 16384;
-    entry.auto_compact_token_limit = 11500;
-    entry.default_reasoning_level = slug === 'qwen3.5-codex-fast-16k' ? 'none' : 'low';
-    entry.supported_reasoning_levels = slug === 'qwen3.5-codex-fast-16k'
-      ? [
+    entry.context_window = contextWindow;
+    entry.max_context_window = contextWindow;
+    entry.auto_compact_token_limit = contextWindow === 16384
+      ? 11500
+      : Math.floor(contextWindow * 0.70);
+    entry.truncation_policy = {
+      mode: 'tokens',
+      limit: Math.min(entry.truncation_policy?.limit ?? contextWindow, Math.floor(contextWindow * 0.85)),
+    };
+    const fastModel = slug === 'qwen3.5-codex-fast-16k' || slug === 'qwen3.5-codex-metal-8k';
+    entry.default_reasoning_level = fastModel ? 'none' : 'low';
+    entry.supported_reasoning_levels = fastModel
+      ? (slug === 'qwen3.5-codex-metal-8k' ? [
+          { effort: 'none', description: 'Local Radeon Metal' },
+        ] : [
           { effort: 'none', description: 'Fastest local responses' },
           { effort: 'medium', description: 'More deliberate local responses' },
-        ]
+        ])
       : [
           { effort: 'low', description: 'Brief local reasoning' },
           { effort: 'medium', description: 'Balanced local reasoning' },
           { effort: 'xhigh', description: 'Deep local reasoning (slow)' },
         ];
-    entry.include_apps_usage_instructions = true;
-    entry.include_plugin_usage_instructions = true;
-    entry.include_skills_usage_instructions = true;
+    const metalModel = slug === 'qwen3.5-codex-metal-8k';
+    entry.include_apps_usage_instructions = !metalModel;
+    entry.include_plugin_usage_instructions = !metalModel;
+    entry.include_skills_usage_instructions = !metalModel;
     entry.supports_parallel_tool_calls = false;
     entry.supports_search_tool = false;
     return [entry];
@@ -166,19 +195,26 @@ if (action === 'status') {
   let text = removeManagedProvider(current);
   text = setTopValues(text, {
     model: JSON.stringify(localModel),
-    model_reasoning_effort: JSON.stringify(localModel === 'qwen3.5-codex-fast-16k' ? 'none' : 'low'),
+    model_reasoning_effort: JSON.stringify(
+      localModel === 'qwen3.5-codex-fast-16k' || localModel === 'qwen3.5-codex-metal-8k' ? 'none' : 'low'
+    ),
     model_provider: JSON.stringify(providerId),
     model_catalog_json: JSON.stringify(localCatalogPath),
     openai_base_url: null,
-    tool_output_token_limit: '2500',
+    tool_output_token_limit: localModel === 'qwen3.5-codex-metal-8k' ? '1200' : '2500',
     developer_instructions: JSON.stringify((process.platform === 'win32'
       ? 'Local Windows runtime. Shell tool commands already use PowerShell: pass native PowerShell directly; never wrap commands in pwsh or powershell -Command. '
       : 'Local macOS runtime. Use native macOS/POSIX shell commands and paths. ') +
-      'For filesystem analysis, scan large candidate folders once, avoid repeated full-drive recursive scans, and report partial results or access errors. Prefer concise tool output and provide progress on slow work.'),
+      'Batch independent read-only checks into one tool call. Reuse existing results after context compaction and never repeat completed checks. ' +
+      'For macOS disk analysis, check free space and the main folders under the current user once; never recursively run du on /, /Users, /System, /private, or /var. ' +
+      'Treat useful output as partial success even if a command exits nonzero, then summarize. Prefer concise tool output.'),
   });
+  if (current.includes('[mcp_servers.ios_mcp]')) {
+    text = setTableValues(text, 'mcp_servers.ios_mcp', { enabled: 'false' });
+  }
   const newline = text.includes('\r\n') ? '\r\n' : '\n';
   text += `${newline}[model_providers.${providerId}]${newline}`;
-  text += `name = "Local Qwen via Ollama"${newline}`;
+  text += `name = ${JSON.stringify(providerName)}${newline}`;
   text += `base_url = "http://127.0.0.1:11435/v1"${newline}`;
   text += `wire_api = "responses"${newline}`;
   text += `supports_websockets = false${newline}`;
@@ -188,7 +224,12 @@ if (action === 'status') {
   process.stdout.write('Configured isolated local_qwen provider; built-in OpenAI URL is unchanged.\n');
 } else if (action === 'cloud' || action === 'rollback') {
   if (!isLocal(current) && action !== 'rollback') {
-    process.stdout.write('Cloud mode is already configured.\n');
+    if (cloudModel) {
+      writeConfig(applyCloudSelection(current));
+      process.stdout.write(`Cloud mode selected ${cloudModel}${cloudReasoningEffort ? ` (${cloudReasoningEffort})` : ''}.\n`);
+    } else {
+      process.stdout.write('Cloud mode is already configured.\n');
+    }
   } else {
     if (!fs.existsSync(statePath)) throw new Error('Cloud-settings snapshot is missing. Refusing to guess the original model.');
     const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -202,7 +243,7 @@ if (action === 'status') {
         text = setTableValues(text, name, state.tables?.[name] ?? {});
       }
     }
-    writeConfig(text);
-    process.stdout.write('Restored original cloud model settings.\n');
+    writeConfig(applyCloudSelection(text));
+    process.stdout.write(`Restored original cloud settings${cloudModel ? ` with ${cloudModel}${cloudReasoningEffort ? ` (${cloudReasoningEffort})` : ''}` : ''}.\n`);
   }
 }
