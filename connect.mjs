@@ -27,18 +27,22 @@ function run(command, args, { stdio = 'inherit' } = {}) {
 }
 
 export function parseArgs(args) {
-  const options = { model: null, disconnect: false, launch: false, noShortcut: false };
+  const options = { model: null, disconnect: false, launch: false, noShortcut: false, list: false };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--disconnect') options.disconnect = true;
     else if (argument === '--launch') options.launch = true;
     else if (argument === '--no-shortcut') options.noShortcut = true;
+    else if (argument === '--list') options.list = true;
     else if (argument === '--model') options.model = args[++index];
     else if (argument.startsWith('--model=')) options.model = argument.slice('--model='.length);
     else throw new Error(`Unknown argument: ${argument}`);
   }
   if (options.disconnect && options.model) throw new Error('--disconnect cannot be combined with --model.');
   if (options.disconnect && options.launch) throw new Error('--disconnect cannot be combined with --launch.');
+  if (options.list && (options.disconnect || options.launch || options.model)) {
+    throw new Error('--list cannot be combined with --disconnect, --launch, or --model.');
+  }
   if (args.includes('--model') && !options.model) throw new Error('--model requires a model name.');
   return options;
 }
@@ -140,28 +144,34 @@ export function restartCodex(platform = process.platform, dependencies = {}) {
   throw new Error(`Unsupported platform: ${platform}.`);
 }
 
-export function connect({ model = null, disconnect = false, launch = false, noShortcut = false, dependencies = {} } = {}) {
+export function connect({ model = null, disconnect = false, launch = false, noShortcut = false, list = false, dependencies = {} } = {}) {
   const platform = dependencies.platform ?? process.platform;
   if (!['win32', 'darwin'].includes(platform)) {
     throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
   }
   const homeDir = dependencies.homeDir ?? os.homedir();
-  const configPath = path.join(process.env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
-  if (!fs.existsSync(configPath)) throw new Error(`Codex config not found: ${configPath}. Open Codex once, then retry.`);
   const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform });
   const runCommand = dependencies.runCommand ?? run;
+
+  if (list) {
+    const result = runCommand(ollama, ['list'], { stdio: 'pipe' });
+    return { listed: true, installed: parseInstalledModels(result.stdout) };
+  }
+
+  const configPath = path.join(process.env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
+  if (!fs.existsSync(configPath)) throw new Error(`Codex config not found: ${configPath}. Open Codex once, then retry.`);
 
   if (disconnect) {
     runCommand(ollama, ['launch', 'chatgpt', '--restore']);
     return { disconnected: true };
   }
 
-  const list = runCommand(ollama, ['list'], { stdio: 'pipe' });
-  const installed = parseInstalledModels(list.stdout);
+  const listResult = runCommand(ollama, ['list'], { stdio: 'pipe' });
+  const installed = parseInstalledModels(listResult.stdout);
   const current = decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model');
   const primary = selectPrimaryModel(installed, model, current);
   if (!primary) {
-    throw new Error('No local Ollama model is installed. Pull/import a model first, or run npm run deploy:27b.');
+    throw new Error('No local Ollama model is installed. Install one explicitly with Ollama, then rerun npm run setup. OllamaForge setup never downloads a model.');
   }
   const launchArgs = ['launch', 'chatgpt', '--config', '--model', primary, '--yes'];
   runCommand(ollama, launchArgs);
@@ -181,13 +191,20 @@ if (isDirectRun) {
   try {
     const options = parseArgs(process.argv.slice(2));
     const result = connect(options);
-    if (result.disconnected) {
+    if (result.listed) {
+      if (result.installed.length === 0) console.log('No local Ollama models are installed.');
+      else {
+        console.log('Installed local Ollama models:');
+        for (const model of result.installed) console.log(`- ${model}`);
+      }
+    } else if (result.disconnected) {
       console.log('Ollama models were disconnected from Codex. Restart Codex to reload its native configuration.');
     } else {
       console.log('\nCodex connection ready.');
       console.log(`Endpoint: ${result.endpoint}`);
       console.log(`Default local model: ${result.primary}`);
       console.log(`Shared local models: ${result.installed.join(', ')}`);
+      console.log('No model was downloaded. Choose a local or cloud model per task in the Codex model picker.');
       if (result.shortcut) console.log(`Desktop shortcut: ${result.shortcut}`);
       console.log(result.launched
         ? 'Codex was refreshed and opened with the shared cloud and local model catalog.'

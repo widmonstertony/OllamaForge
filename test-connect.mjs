@@ -5,11 +5,29 @@ import path from 'node:path';
 import { connect, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
-assert.deepEqual(parseArgs([]), { model: null, disconnect: false, launch: false, noShortcut: false });
-assert.deepEqual(parseArgs(['--model', 'qwen3.5:9b']), { model: 'qwen3.5:9b', disconnect: false, launch: false, noShortcut: false });
-assert.deepEqual(parseArgs(['--disconnect']), { model: null, disconnect: true, launch: false, noShortcut: false });
-assert.deepEqual(parseArgs(['--launch', '--no-shortcut']), { model: null, disconnect: false, launch: true, noShortcut: true });
+const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const readme = fs.readFileSync(new URL('./README.md', import.meta.url), 'utf8');
+assert.equal(packageJson.scripts.setup, 'node connect.mjs');
+assert.equal(packageJson.scripts.connect, 'node connect.mjs');
+assert.equal(packageJson.scripts.models, 'node connect.mjs --list');
+assert.equal(packageJson.scripts.refresh, 'node connect.mjs');
+assert.equal(packageJson.scripts['download:27b'], 'node deploy.mjs');
+assert.ok(!packageJson.scripts.setup.includes('deploy.mjs'));
+assert.ok(!packageJson.scripts.setup.includes('setup.mjs'));
+const documentedScripts = [...readme.matchAll(/npm run ([a-z0-9:_-]+)/gi)].map((match) => match[1]);
+assert.deepEqual(
+  [...new Set(documentedScripts)].filter((name) => !packageJson.scripts[name]),
+  [],
+  'Every npm command in README.md must exist in package.json.',
+);
+
+assert.deepEqual(parseArgs([]), { model: null, disconnect: false, launch: false, noShortcut: false, list: false });
+assert.deepEqual(parseArgs(['--model', 'qwen3.5:9b']), { model: 'qwen3.5:9b', disconnect: false, launch: false, noShortcut: false, list: false });
+assert.deepEqual(parseArgs(['--disconnect']), { model: null, disconnect: true, launch: false, noShortcut: false, list: false });
+assert.deepEqual(parseArgs(['--launch', '--no-shortcut']), { model: null, disconnect: false, launch: true, noShortcut: true, list: false });
+assert.deepEqual(parseArgs(['--list']), { model: null, disconnect: false, launch: false, noShortcut: false, list: true });
 assert.throws(() => parseArgs(['--disconnect', '--model=x']), /cannot be combined/);
+assert.throws(() => parseArgs(['--list', '--model=x']), /cannot be combined/);
 
 const installed = parseInstalledModels(
   'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\nqwen3.8-codex-iq4-xs-64k:latest def 13 GB now\nqwen3.8-codex-iq4-xs-110k:latest ghi 13 GB now\nfoo:cloud jkl - now\n',
@@ -18,6 +36,7 @@ assert.deepEqual(installed, ['qwen3.5:9b', 'qwen3.8-codex-iq4-xs-64k:latest', 'q
 assert.equal(selectPrimaryModel(installed, null, 'qwen3.5:9b'), 'qwen3.5:9b');
 assert.equal(selectPrimaryModel(installed, null, 'gpt-cloud'), 'qwen3.8-codex-iq4-xs-64k');
 assert.equal(selectPrimaryModel(installed, 'QWEN3.5:9B', null), 'qwen3.5:9b');
+assert.equal(selectPrimaryModel([], null, 'gpt-cloud'), null);
 assert.throws(() => selectPrimaryModel(installed, 'missing:7b', null), /not installed/);
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-connect-'));
@@ -41,6 +60,13 @@ try {
     throw new Error(`Unexpected command: ${args.join(' ')}`);
   };
   fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
+  const listed = connect({ list: true, dependencies: {
+    platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand,
+  } });
+  assert.deepEqual(listed.installed, ['qwen3.5:9b']);
+  assert.ok(!calls.some((args) => args[0] === 'launch'));
+  calls.length = 0;
+
   connect({ dependencies: {
     platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
   } });
@@ -80,4 +106,4 @@ try {
   fs.rmSync(work, { recursive: true, force: true });
 }
 
-console.log('PASS: connect-only argument parsing, installed-model discovery, and primary selection.');
+console.log('PASS: download-free package contract, connect arguments, installed-model discovery, and primary selection.');

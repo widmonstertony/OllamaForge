@@ -44,7 +44,9 @@ export const MODEL_SPECS = Object.freeze({
 });
 
 export function parseArgs(args) {
-  const options = { model: '9b', noPull: false, help: false };
+  // Retain noPull in the return shape for compatibility with older callers,
+  // but model preparation is now always offline/non-downloading.
+  const options = { model: '9b', noPull: true, help: false };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--no-pull') options.noPull = true;
@@ -92,11 +94,6 @@ function defaultRunInherit(command, args) {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${path.basename(command)} ${args.join(' ')} exited with status ${result.status}.`);
   return result;
-}
-
-function defaultAvailableBytes(targetPath) {
-  const stats = fs.statfsSync(targetPath);
-  return Number(stats.bavail) * Number(stats.bsize);
 }
 
 function resolveCatalogPath(configText, configDir, homeDir) {
@@ -154,7 +151,6 @@ export function runSetup(options, dependencies = {}) {
   const rootDir = dependencies.rootDir ?? repositoryRoot;
   const runCapture = dependencies.runCapture ?? defaultRunCapture;
   const runInherit = dependencies.runInherit ?? defaultRunInherit;
-  const availableBytes = dependencies.availableBytes ?? defaultAvailableBytes;
   const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
   const spec = MODEL_SPECS[options.model];
 
@@ -167,18 +163,10 @@ export function runSetup(options, dependencies = {}) {
       throw new Error(`Local model file not found: ${localFile}`);
     }
   } else if (!modelExists(ollama, spec.base, runCapture)) {
-    if (options.noPull) {
-      throw new Error(`${spec.base} is not installed and --no-pull was requested.`);
-    }
-    const freeBytes = availableBytes(homeDir);
-    const requiredBytes = spec.minimumFreeGiB * (1024 ** 3);
-    if (freeBytes < requiredBytes) {
-      throw new Error(
-        `Not enough free disk space for ${spec.base}: ${(freeBytes / (1024 ** 3)).toFixed(1)} GiB available; ` +
-        `${spec.minimumFreeGiB} GiB required.`,
-      );
-    }
-    runInherit(ollama, ['pull', spec.base]);
+    throw new Error(
+      `${spec.base} is not installed. OllamaForge never downloads models during setup; ` +
+      `install or import the model explicitly, then rerun this command.`,
+    );
   }
 
   // Always rebuild repository-managed aliases so template and parameter fixes
@@ -247,9 +235,9 @@ export function runSetup(options, dependencies = {}) {
 }
 
 function printHelp() {
-  console.log(`Usage: npm run setup -- --model <9b|27b|27b-iq4-xs> [--no-pull]\n\n` +
-    `Downloads only the selected model, configures Ollama for ChatGPT/Codex,\n` +
-    `and restores the existing cloud model as the default.`);
+  console.log(`Usage: npm run prepare:alias -- --model <9b|27b|27b-iq4-xs>\n\n` +
+    `Creates a repository-managed alias from an already installed/imported model,\n` +
+    `configures it for ChatGPT/Codex, and never downloads model weights.`);
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);

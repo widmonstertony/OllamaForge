@@ -14,8 +14,8 @@ import {
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 assert.deepEqual(parseArgs(['--model', '27b', '--no-pull']), { model: '27b', noPull: true, help: false });
-assert.deepEqual(parseArgs(['--model=9b']), { model: '9b', noPull: false, help: false });
-assert.deepEqual(parseArgs(['--model=27b-iq4-xs']), { model: '27b-iq4-xs', noPull: false, help: false });
+assert.deepEqual(parseArgs(['--model=9b']), { model: '9b', noPull: true, help: false });
+assert.deepEqual(parseArgs(['--model=27b-iq4-xs']), { model: '27b-iq4-xs', noPull: true, help: false });
 assert.throws(() => parseArgs(['--model', '70b']), /27b-iq4-xs/);
 assert.equal(MODEL_SPECS['9b'].base, 'qwen3.5:9b');
 assert.equal(MODEL_SPECS['27b'].base, 'qwen3.8:27b');
@@ -162,11 +162,12 @@ function cleanup(harness) {
 }
 
 {
-  const harness = createHarness({ includeStaleLocal: true });
+  const harness = createHarness({ includeStaleLocal: true, installedModels: ['qwen3.5:9b'] });
   try {
     const result = runSetup({ model: '9b', noPull: false }, harness.dependencies);
     assert.ok(harness.installed.has('qwen3.5:9b'));
     assert.ok(harness.installed.has('qwen3.5-codex-fast-16k'));
+    assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
     assert.ok(!harness.calls.flat().includes('qwen3.8:27b'), '9B setup must not inspect or pull 27B');
     assert.equal(result.cloudDefault, 'gemma4:31b:cloud');
     assert.match(fs.readFileSync(harness.configPath, 'utf8'), /^model = "gemma4:31b:cloud"/m);
@@ -244,19 +245,10 @@ function cleanup(harness) {
 }
 
 {
-  const harness = createHarness({ freeGiB: 23.9 });
-  try {
-    assert.throws(() => runSetup({ model: '27b', noPull: false }, harness.dependencies), /24 GiB required/);
-    assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
-  } finally {
-    cleanup(harness);
-  }
-}
-
-{
   const harness = createHarness();
   try {
-    assert.throws(() => runSetup({ model: '27b', noPull: true }, harness.dependencies), /--no-pull was requested/);
+    assert.throws(() => runSetup({ model: '27b', noPull: false }, harness.dependencies), /never downloads models/);
+    assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
   } finally {
     cleanup(harness);
   }
