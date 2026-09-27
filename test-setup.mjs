@@ -187,12 +187,15 @@ function cleanup(harness) {
 {
   const harness = createHarness({
     defaultModel: 'gpt-5.6-sol',
-    installedModels: ['qwen3.8:27b'],
+    installedModels: ['qwen3.8:27b', 'qwen3.8-codex-16k'],
   });
   try {
     const result = runSetup({ model: '27b', noPull: true }, { ...harness.dependencies, platform: 'win32' });
     assert.equal(result.cloudDefault, 'gpt-5.6-sol');
     assert.ok(harness.installed.has('qwen3.8-codex-16k'));
+    assert.ok(harness.calls.some((call) =>
+      call[0] === 'inherit' && call[1] === 'create' && call[2] === 'qwen3.8-codex-16k'
+    ), 'setup must rebuild an existing alias so updated templates take effect');
     assert.ok(!harness.calls.some((call) => call[1] === 'pull'));
     assert.ok(!harness.calls.flat().includes('qwen3.5:9b'), '27B setup must not inspect or pull 9B');
     const qualityAlias = JSON.parse(fs.readFileSync(harness.catalogPath, 'utf8')).models

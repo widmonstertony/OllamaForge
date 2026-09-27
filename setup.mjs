@@ -181,11 +181,11 @@ export function runSetup(options, dependencies = {}) {
     runInherit(ollama, ['pull', spec.base]);
   }
 
-  if (spec.localFile || !modelExists(ollama, spec.alias, runCapture)) {
-    const modelfile = path.join(rootDir, spec.modelfile);
-    if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
-    runInherit(ollama, ['create', spec.alias, '-f', modelfile]);
-  }
+  // Always rebuild repository-managed aliases so template and parameter fixes
+  // reach machines that already have an older alias with the same name.
+  const modelfile = path.join(rootDir, spec.modelfile);
+  if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
+  runInherit(ollama, ['create', spec.alias, '-f', modelfile]);
   for (const companion of spec.companionModels ?? []) {
     const modelfile = path.join(rootDir, companion.modelfile);
     if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
