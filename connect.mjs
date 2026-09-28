@@ -72,6 +72,40 @@ export function selectPrimaryModel(installed, requested, current) {
   return preferred ?? byCanonical.values().next().value ?? null;
 }
 
+function isCloudCodexModel(name, installed) {
+  const normalized = canonical(name);
+  if (!normalized || normalized.endsWith(':cloud')) return false;
+  const local = new Set(installed.map((model) => canonical(model).toLowerCase()));
+  return !local.has(normalized.toLowerCase()) && /^(gpt-|codex-|chatgpt-|o\d)/i.test(normalized);
+}
+
+/** Find the user's cloud default without ever promoting a newly added local model. */
+export function findCloudDefault(configPath, installed, backupDir) {
+  const config = fs.readFileSync(configPath, 'utf8');
+  const current = decodedTopString(config, 'model');
+  if (isCloudCodexModel(current, installed)) return current;
+
+  if (backupDir && fs.existsSync(backupDir)) {
+    const backups = fs.readdirSync(backupDir)
+      .filter((name) => name.startsWith('config.toml.'))
+      .map((name) => path.join(backupDir, name))
+      .filter((filePath) => fs.statSync(filePath).isFile())
+      .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    for (const backupPath of backups) {
+      const model = decodedTopString(fs.readFileSync(backupPath, 'utf8'), 'model');
+      if (isCloudCodexModel(model, installed)) return model;
+    }
+  }
+
+  const catalogPath = decodedTopString(config, 'model_catalog_json');
+  if (catalogPath && fs.existsSync(catalogPath)) {
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const entry = (catalog.models ?? []).find((model) => isCloudCodexModel(model?.slug, installed));
+    if (entry) return entry.slug;
+  }
+  return null;
+}
+
 export function tuneCodexCatalog(configPath) {
   const config = fs.readFileSync(configPath, 'utf8');
   const catalogPath = decodedTopString(config, 'model_catalog_json');
@@ -214,6 +248,8 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   const listResult = runCommand(ollama, ['list'], { stdio: 'pipe' });
   const installed = parseInstalledModels(listResult.stdout);
   const current = decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model');
+  const backupDir = dependencies.backupDir ?? path.join(homeDir, '.ollama', 'backup', 'codex-app');
+  let cloudDefault = findCloudDefault(configPath, installed, backupDir);
   const primary = selectPrimaryModel(installed, model, current);
   if (!primary) {
     throw new Error('No local Ollama model is installed. Install one explicitly with Ollama, then rerun npm run setup. OllamaForge setup never downloads a model.');
@@ -226,10 +262,21 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   }
   configureHttpProvider(configPath);
   const tunedCatalogModels = tuneCodexCatalog(configPath);
-  const selectedModelPreserved = preserveSelectedModel(configPath, current, model);
+  cloudDefault ??= findCloudDefault(configPath, installed, backupDir);
+  const selectedModelPreserved = preserveSelectedModel(configPath, cloudDefault);
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
   if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
-  return { disconnected: false, primary, installed, endpoint, shortcut, launched: launch, tunedCatalogModels, selectedModelPreserved };
+  return {
+    disconnected: false,
+    primary,
+    defaultModel: cloudDefault ?? primary,
+    installed,
+    endpoint,
+    shortcut,
+    launched: launch,
+    tunedCatalogModels,
+    selectedModelPreserved,
+  };
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
@@ -248,7 +295,8 @@ if (isDirectRun) {
     } else {
       console.log('\nCodex connection ready.');
       console.log(`Endpoint: ${result.endpoint}`);
-      console.log(`Default local model: ${result.primary}`);
+      console.log(`Default Codex model: ${result.defaultModel}`);
+      console.log(`Ollama catalog seed: ${result.primary}`);
       console.log(`Shared local models: ${result.installed.join(', ')}`);
       console.log('No model was downloaded. Choose a local or cloud model per task in the Codex model picker.');
       if (result.shortcut) console.log(`Desktop shortcut: ${result.shortcut}`);

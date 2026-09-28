@@ -250,6 +250,9 @@ OllamaForge registers that endpoint as an HTTP-only Codex provider. This keeps c
 models such as GPT-5.6 on the working streaming Responses transport instead of letting
 Codex attempt an unsupported WebSocket connection and loop on "Reconnecting".
 
+Your existing cloud model remains the Codex default. OllamaForge only adds installed
+local models to the picker; it never promotes a local model to the global default.
+
 ```text
 http://127.0.0.1:11434/api/codex/v1
 ```

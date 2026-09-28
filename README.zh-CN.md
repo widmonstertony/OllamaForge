@@ -234,6 +234,9 @@ OllamaForge 会把该 endpoint 注册为仅使用 HTTP 的 Codex provider。这�
 等云端模型会继续使用可工作的 Responses 流式传输，不会让 Codex 尝试 Ollama
 尚不支持的 WebSocket 并反复显示“重新连接”。
 
+原有云端模型会继续作为 Codex 默认模型。OllamaForge 只把已安装的本地模型
+添加到模型选择器，绝不会把本地模型提升为全局默认值。
+
 ```text
 http://127.0.0.1:11434/api/codex/v1
 ```

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { configureHttpProvider, connect, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
+import { configureHttpProvider, connect, findCloudDefault, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
 const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -53,6 +53,8 @@ try {
   const configPath = path.join(configDir, 'config.toml');
   const catalogPath = path.join(configDir, 'models.json');
   fs.mkdirSync(configDir, { recursive: true });
+  const backupDir = path.join(work, '.ollama', 'backup', 'codex-app');
+  fs.mkdirSync(backupDir, { recursive: true });
   const calls = [];
   const runCommand = (_command, args) => {
     calls.push(args);
@@ -91,6 +93,10 @@ try {
   configureHttpProvider(configPath);
   const idempotentConfig = fs.readFileSync(configPath, 'utf8');
   assert.equal((idempotentConfig.match(/\[model_providers\.ollamaforge\]/g) ?? []).length, 1);
+
+  fs.writeFileSync(path.join(backupDir, 'config.toml.1'), 'model = "gpt-cloud"\n');
+  fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
+  assert.equal(findCloudDefault(configPath, ['qwen3.5:9b'], backupDir), 'gpt-cloud');
 
   assert.equal(preserveSelectedModel(configPath, 'missing-model'), false);
 
