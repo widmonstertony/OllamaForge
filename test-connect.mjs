@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connect, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
+import { configureHttpProvider, connect, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
 const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -80,6 +80,17 @@ try {
   } });
   assert.ok(calls.at(-1).includes('--config'));
   assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
+  const connectedConfig = fs.readFileSync(configPath, 'utf8');
+  assert.equal(decodedTopString(connectedConfig, 'model_provider'), 'ollamaforge');
+  assert.equal(decodedTopString(connectedConfig, 'openai_base_url'), null);
+  assert.match(connectedConfig, /\[model_providers\.ollamaforge\]/);
+  assert.match(connectedConfig, /^base_url = "http:\/\/127\.0\.0\.1:11434\/api\/codex\/v1"$/m);
+  assert.match(connectedConfig, /^requires_openai_auth = true$/m);
+  assert.match(connectedConfig, /^supports_websockets = false$/m);
+
+  configureHttpProvider(configPath);
+  const idempotentConfig = fs.readFileSync(configPath, 'utf8');
+  assert.equal((idempotentConfig.match(/\[model_providers\.ollamaforge\]/g) ?? []).length, 1);
 
   assert.equal(preserveSelectedModel(configPath, 'missing-model'), false);
 

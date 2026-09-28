@@ -230,6 +230,10 @@ Codex Desktop / Harness
 
 Ollama 原生 endpoint 为：
 
+OllamaForge 会把该 endpoint 注册为仅使用 HTTP 的 Codex provider。这样 GPT-5.6
+等云端模型会继续使用可工作的 Responses 流式传输，不会让 Codex 尝试 Ollama
+尚不支持的 WebSocket 并反复显示“重新连接”。
+
 ```text
 http://127.0.0.1:11434/api/codex/v1
 ```

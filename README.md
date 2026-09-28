@@ -246,6 +246,10 @@ Codex Desktop / Harness
 
 Ollama's native endpoint is:
 
+OllamaForge registers that endpoint as an HTTP-only Codex provider. This keeps cloud
+models such as GPT-5.6 on the working streaming Responses transport instead of letting
+Codex attempt an unsupported WebSocket connection and loop on "Reconnecting".
+
 ```text
 http://127.0.0.1:11434/api/codex/v1
 ```

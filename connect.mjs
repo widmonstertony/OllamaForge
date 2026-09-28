@@ -10,6 +10,7 @@ import { resolveOllamaExecutable } from './setup.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const endpoint = 'http://127.0.0.1:11434/api/codex/v1';
+const providerId = 'ollamaforge';
 const tunedModels = new Map([
   ['qwen3.8:27b-mlx', { contextWindow: 184_320, defaultReasoning: 'none' }],
   ['qwen3.8-codex-iq4-xs-64k', { contextWindow: 65_536, defaultReasoning: 'none' }],
@@ -104,6 +105,50 @@ export function preserveSelectedModel(configPath, selectedModel, requestedModel 
   return true;
 }
 
+function removeTopValue(text, key) {
+  return text.replace(new RegExp(`^${key}\\s*=.*(?:\\r?\\n|$)`, 'm'), '');
+}
+
+function removeProviderTable(text, id) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const result = [];
+  let skipping = false;
+  for (const line of text.split(/\r?\n/)) {
+    const header = line.trim();
+    if (header === `[model_providers.${id}]` || header.startsWith(`[model_providers.${id}.`)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping && /^\[/.test(line)) skipping = false;
+    if (!skipping) result.push(line);
+  }
+  return result.join(newline).trimEnd();
+}
+
+/**
+ * Use a named HTTP-only provider instead of overriding the built-in OpenAI provider.
+ * Ollama's Codex gateway supports streaming Responses over HTTP, but not the Responses
+ * WebSocket transport that some cloud models prefer. Explicitly disabling websocket
+ * support prevents Codex desktop from getting stuck in a reconnect loop.
+ */
+export function configureHttpProvider(configPath) {
+  let text = fs.readFileSync(configPath, 'utf8');
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  text = removeTopValue(text, 'openai_base_url');
+  text = setTopValue(text, 'model_provider', JSON.stringify(providerId));
+  text = removeProviderTable(text, providerId);
+  text += `${newline}${newline}[model_providers.${providerId}]${newline}`;
+  text += `name = "OllamaForge HTTP bridge"${newline}`;
+  text += `base_url = ${JSON.stringify(endpoint)}${newline}`;
+  text += `wire_api = "responses"${newline}`;
+  text += `requires_openai_auth = true${newline}`;
+  text += `supports_websockets = false${newline}`;
+  text += `request_max_retries = 1${newline}`;
+  text += `stream_max_retries = 1${newline}`;
+  atomicWrite(configPath, text);
+  return providerId;
+}
+
 function installShortcut(platform = process.platform) {
   if (platform === 'win32') {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -179,6 +224,7 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
+  configureHttpProvider(configPath);
   const tunedCatalogModels = tuneCodexCatalog(configPath);
   const selectedModelPreserved = preserveSelectedModel(configPath, current, model);
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
