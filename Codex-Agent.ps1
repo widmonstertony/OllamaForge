@@ -27,12 +27,7 @@ $codexArgs = @(
     '-c', 'model_providers.ollama_codex_adapter.base_url="http://127.0.0.1:11435/v1"',
     '-c', 'model_providers.ollama_codex_adapter.wire_api="responses"',
     '-c', 'model_providers.ollama_codex_adapter.request_max_retries=1',
-    '-c', 'model_providers.ollama_codex_adapter.stream_max_retries=1',
-    '--disable', 'plugins',
-    '--disable', 'apps',
-    '--disable', 'browser_use',
-    '--disable', 'image_generation',
-    '--disable', 'multi_agent'
+    '-c', 'model_providers.ollama_codex_adapter.stream_max_retries=1'
 )
 
 if ($Prompt.Count -gt 0) { $codexArgs += ($Prompt -join ' ') }

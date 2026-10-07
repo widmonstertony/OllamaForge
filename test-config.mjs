@@ -81,16 +81,25 @@ try {
   assert.deepEqual(JSON.parse(fs.readFileSync(catalog, 'utf8')).models.map((model) => model.slug),
     ['qwen3.8-codex-16k']);
 
+  // Feature/plugin changes made after the model snapshot must survive.
+  text = text
+    .replace('plugins = true', 'plugins = false')
+    .replace('apps = true', 'apps = false')
+    .replace('browser_use = true', 'browser_use = false')
+    .replace('enabled = true', 'enabled = false');
+  text += '\n[plugins."chrome@openai-bundled"]\nenabled = true\n';
+  fs.writeFileSync(config, text);
+
   run('cloud');
   text = fs.readFileSync(config, 'utf8');
-  assert.equal(text, original);
   assert.match(text, /^model = "gpt-cloud"/m);
   assert.doesNotMatch(text, /\[model_providers\.local_qwen\]/);
   assert.match(text, /\[model_providers\.other\]/);
-  assert.match(text, /plugins = true/);
-  assert.match(text, /apps = true/);
-  assert.match(text, /browser_use = true/);
-  assert.match(text, /\[mcp_servers\.node_repl\]\nenabled = true/);
+  assert.match(text, /plugins = false/);
+  assert.match(text, /apps = false/);
+  assert.match(text, /browser_use = false/);
+  assert.match(text, /\[mcp_servers\.node_repl\]\nenabled = false/);
+  assert.match(text, /\[plugins\."chrome@openai-bundled"\]\nenabled = true/);
 
   run('local', 'qwen3.5-codex-fast-16k', ['qwen3.5-codex-fast-16k']);
   run('cloud', undefined, [], {
@@ -116,7 +125,7 @@ try {
   assert.equal(text, minimalOriginal);
   assert.doesNotMatch(text, /\[features\]/);
   assert.doesNotMatch(text, /\[mcp_servers\.node_repl\]/);
-  console.log('PASS: selected-only catalog, tool instructions, feature preservation, and byte-exact cloud restore.');
+  console.log('PASS: selected-only catalog, tool instructions, and post-snapshot setting preservation.');
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }
