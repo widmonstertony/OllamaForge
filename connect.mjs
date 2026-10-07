@@ -17,8 +17,8 @@ const tunedModels = new Map([
   ['qwen3.8-codex-iq4-xs-110k', { contextWindow: 110_000, defaultReasoning: 'none' }],
 ]);
 
-function run(command, args, { stdio = 'inherit' } = {}) {
-  const result = spawnSync(command, args, { stdio, encoding: stdio === 'pipe' ? 'utf8' : undefined });
+function run(command, args, { stdio = 'inherit', env = process.env } = {}) {
+  const result = spawnSync(command, args, { stdio, env, encoding: stdio === 'pipe' ? 'utf8' : undefined });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const details = String(result.stderr || result.stdout || '').trim();
@@ -56,6 +56,84 @@ export function parseInstalledModels(output) {
 
 function canonical(name) {
   return String(name ?? '').replace(/:latest$/, '');
+}
+
+export function resolveCodexExecutable({ platform = process.platform, homeDir = os.homedir(), environment = process.env } = {}) {
+  const explicit = environment.CODEX_EXECUTABLE?.trim();
+  if (explicit && fs.existsSync(explicit)) return explicit;
+
+  const executableName = platform === 'win32' ? 'codex.exe' : 'codex';
+  const pathMatch = String(environment.PATH ?? '').split(path.delimiter)
+    .map((directory) => path.join(directory, executableName))
+    .find((candidate) => fs.existsSync(candidate));
+  if (pathMatch) return pathMatch;
+
+  if (platform === 'win32') {
+    const localAppData = environment.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+    const binDir = path.join(localAppData, 'OpenAI', 'Codex', 'bin');
+    if (!fs.existsSync(binDir)) return null;
+    const candidates = fs.readdirSync(binDir, { withFileTypes: true })
+      .flatMap((entry) => entry.isDirectory()
+        ? [path.join(binDir, entry.name, 'codex.exe')]
+        : entry.name.toLowerCase() === 'codex.exe' ? [path.join(binDir, entry.name)] : [])
+      .filter((candidate) => fs.existsSync(candidate))
+      .sort((left, right) => fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs);
+    return candidates[0] ?? null;
+  }
+
+  if (platform === 'darwin') {
+    return [
+      '/Applications/Codex.app/Contents/Resources/codex',
+      path.join(homeDir, 'Applications', 'Codex.app', 'Contents', 'Resources', 'codex'),
+    ].find((candidate) => fs.existsSync(candidate)) ?? null;
+  }
+  return null;
+}
+
+/** Refresh Codex's own cloud catalog in an isolated config directory. */
+export function refreshCodexCloudCatalog({ codexExecutable, configDir, runCommand = run } = {}) {
+  if (!codexExecutable) return null;
+  const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-codex-'));
+  try {
+    const authPath = path.join(configDir, 'auth.json');
+    if (fs.existsSync(authPath)) fs.copyFileSync(authPath, path.join(temporaryHome, 'auth.json'));
+    const result = runCommand(codexExecutable, ['debug', 'models'], {
+      stdio: 'pipe',
+      env: { ...process.env, CODEX_HOME: temporaryHome },
+    });
+    const catalog = JSON.parse(result.stdout);
+    if (!Array.isArray(catalog.models) || catalog.models.length === 0) {
+      throw new Error('Codex returned an empty cloud model catalog.');
+    }
+    return catalog;
+  } finally {
+    fs.rmSync(temporaryHome, { recursive: true, force: true });
+  }
+}
+
+/** Replace stale cloud entries while retaining only models currently installed in Ollama. */
+export function mergeCodexCloudCatalog(configPath, cloudCatalog, installed) {
+  if (!cloudCatalog || !Array.isArray(cloudCatalog.models)) return null;
+  const config = fs.readFileSync(configPath, 'utf8');
+  const catalogPath = decodedTopString(config, 'model_catalog_json');
+  if (!catalogPath || !fs.existsSync(catalogPath)) return null;
+  const generated = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const installedSlugs = new Set(installed.map((name) => canonical(name).toLowerCase()));
+  const localModels = (generated.models ?? []).filter((entry) =>
+    installedSlugs.has(canonical(entry?.slug).toLowerCase()));
+  const localSlugs = new Set(localModels.map((entry) => canonical(entry.slug).toLowerCase()));
+  const cloudModels = cloudCatalog.models.filter((entry) =>
+    entry?.slug && !localSlugs.has(canonical(entry.slug).toLowerCase()));
+  const merged = { ...cloudCatalog, models: [...cloudModels, ...localModels] };
+  fs.writeFileSync(catalogPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  return { catalogPath, cloudModels: cloudModels.length, localModels: localModels.length };
+}
+
+export function selectCloudDefault(catalog, preferred) {
+  const models = Array.isArray(catalog?.models) ? catalog.models : [];
+  const wanted = canonical(preferred).toLowerCase();
+  const match = models.find((entry) => canonical(entry?.slug).toLowerCase() === wanted);
+  return match?.slug ?? models.find((entry) => entry?.slug && entry.visibility !== 'hide')?.slug ?? null;
 }
 
 export function selectPrimaryModel(installed, requested, current) {
@@ -250,6 +328,21 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   const current = decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model');
   const backupDir = dependencies.backupDir ?? path.join(homeDir, '.ollama', 'backup', 'codex-app');
   let cloudDefault = findCloudDefault(configPath, installed, backupDir);
+  let cloudCatalog = null;
+  let catalogRefreshWarning = null;
+  try {
+    const refresh = dependencies.refreshCloudCatalog;
+    cloudCatalog = refresh
+      ? refresh()
+      : refreshCodexCloudCatalog({
+          codexExecutable: dependencies.codexExecutable ?? resolveCodexExecutable({ platform, homeDir }),
+          configDir: path.dirname(configPath),
+          runCommand,
+        });
+    if (cloudCatalog) cloudDefault = selectCloudDefault(cloudCatalog, cloudDefault);
+  } catch (error) {
+    catalogRefreshWarning = error.message;
+  }
   const primary = selectPrimaryModel(installed, model, current);
   if (!primary) {
     throw new Error('No local Ollama model is installed. Install one explicitly with Ollama, then rerun npm run setup. OllamaForge setup never downloads a model.');
@@ -260,6 +353,7 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
   }
+  const mergedCatalog = mergeCodexCloudCatalog(configPath, cloudCatalog, installed);
   configureHttpProvider(configPath);
   const tunedCatalogModels = tuneCodexCatalog(configPath);
   cloudDefault ??= findCloudDefault(configPath, installed, backupDir);
@@ -276,6 +370,8 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     launched: launch,
     tunedCatalogModels,
     selectedModelPreserved,
+    mergedCatalog,
+    catalogRefreshWarning,
   };
 }
 
@@ -298,6 +394,12 @@ if (isDirectRun) {
       console.log(`Default Codex model: ${result.defaultModel}`);
       console.log(`Ollama catalog seed: ${result.primary}`);
       console.log(`Shared local models: ${result.installed.join(', ')}`);
+      if (result.mergedCatalog) {
+        console.log(`Fresh Codex cloud models: ${result.mergedCatalog.cloudModels}`);
+      }
+      if (result.catalogRefreshWarning) {
+        console.warn(`Cloud model refresh warning: ${result.catalogRefreshWarning}`);
+      }
       console.log('No model was downloaded. Choose a local or cloud model per task in the Codex model picker.');
       if (result.shortcut) console.log(`Desktop shortcut: ${result.shortcut}`);
       console.log(result.launched

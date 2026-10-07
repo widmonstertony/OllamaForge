@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { configureHttpProvider, connect, findCloudDefault, parseArgs, parseInstalledModels, preserveSelectedModel, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
+import { configureHttpProvider, connect, findCloudDefault, mergeCodexCloudCatalog, parseArgs, parseInstalledModels, preserveSelectedModel, selectCloudDefault, selectPrimaryModel, tuneCodexCatalog } from './connect.mjs';
 import { decodedTopString } from './ollama-chatgpt-hybrid.mjs';
 
 const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
@@ -62,7 +62,7 @@ try {
     if (args[0] === 'launch') {
       fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
       fs.writeFileSync(catalogPath, JSON.stringify({ models: [
-        { slug: 'gpt-cloud' },
+        { slug: 'gpt-stale' },
         { slug: 'qwen3.5:9b' },
       ] }));
       return { status: 0 };
@@ -79,6 +79,7 @@ try {
 
   connect({ dependencies: {
     platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
+    refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
   } });
   assert.ok(calls.at(-1).includes('--config'));
   assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
@@ -89,6 +90,8 @@ try {
   assert.match(connectedConfig, /^base_url = "http:\/\/127\.0\.0\.1:11434\/api\/codex\/v1"$/m);
   assert.match(connectedConfig, /^requires_openai_auth = true$/m);
   assert.match(connectedConfig, /^supports_websockets = false$/m);
+  assert.deepEqual(JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models.map((entry) => entry.slug),
+    ['gpt-cloud', 'gpt-new', 'qwen3.5:9b']);
 
   configureHttpProvider(configPath);
   const idempotentConfig = fs.readFileSync(configPath, 'utf8');
@@ -105,6 +108,7 @@ try {
   let restartPlatform = null;
   const launched = connect({ launch: true, noShortcut: true, dependencies: {
     platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'unused',
+    refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
     restartCodex: (platform) => { restartPlatform = platform; },
   } });
   assert.equal(launched.launched, true);
@@ -127,6 +131,14 @@ try {
   assert.equal(tuned[1].max_context_window, 65536);
   assert.equal(tuned[2].context_window, 110000);
   assert.equal(tuned[2].max_context_window, 110000);
+
+  assert.equal(selectCloudDefault({ models: [{ slug: 'gpt-new' }] }, 'gpt-stale'), 'gpt-new');
+  fs.writeFileSync(configPath, `model_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{ slug: 'gpt-old' }, { slug: 'qwen3.5:9b' }] }));
+  const merged = mergeCodexCloudCatalog(configPath, { models: [{ slug: 'gpt-new' }] }, ['qwen3.5:9b']);
+  assert.deepEqual(merged, { catalogPath, cloudModels: 1, localModels: 1 });
+  assert.deepEqual(JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models.map((entry) => entry.slug),
+    ['gpt-new', 'qwen3.5:9b']);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

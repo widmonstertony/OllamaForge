@@ -57,14 +57,17 @@ npm run setup
 This command:
 
 1. checks Ollama, the Codex configuration, and installed models;
-2. calls Ollama's official ChatGPT/Codex integration to generate a local model catalog;
-3. preserves the existing cloud models, default model, reasoning settings, Apps, and plugin configuration;
-4. adds all available local models to the same Codex model picker;
+2. asks the currently installed Codex CLI to refresh its cloud model catalog;
+3. calls Ollama's official ChatGPT/Codex integration to generate local model entries;
+4. merges the fresh Codex cloud entries with the currently installed Ollama models, while preserving the default model, reasoning settings, Apps, and plugin configuration;
 5. creates the appropriate desktop shortcut for the platform;
 6. preserves or restores the original configuration if anything fails.
 
 It does not download models. Fully quit and reopen Codex when setup finishes,
 then choose a local or cloud model from the model picker in each task.
+Running setup or the desktop shortcut again replaces only the two generated parts:
+Codex supplies the latest cloud entries and Ollama supplies the current local entries.
+One side never becomes the saved source of truth for the other.
 
 ## Choosing a model
 

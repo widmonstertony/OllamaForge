@@ -2,6 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
 const listenHost = '127.0.0.1';
@@ -505,34 +506,43 @@ function forward(req, res, rawBody) {
   upstreamRequest.end(outgoingBody);
 }
 
-const server = http.createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', upstream: upstream.origin }));
-    return;
-  }
-
-  const chunks = [];
-  let size = 0;
-  req.on('data', (chunk) => {
-    size += chunk.length;
-    if (size > maxRequestBytes) {
-      res.writeHead(413, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { type: 'adapter_error', message: 'Request body is too large.' } }));
-      req.destroy();
+export function startAdapter({ host = listenHost, port = listenPort } = {}) {
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', upstream: upstream.origin }));
       return;
     }
-    chunks.push(chunk);
-  });
-  req.on('end', () => {
-    if (!res.writableEnded) forward(req, res, Buffer.concat(chunks));
-  });
-});
 
-server.listen(listenPort, listenHost, () => {
-  process.stdout.write(`Codex-Ollama adapter ready at http://${listenHost}:${listenPort}\n`);
-});
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxRequestBytes) {
+        res.writeHead(413, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { type: 'adapter_error', message: 'Request body is too large.' } }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!res.writableEnded) forward(req, res, Buffer.concat(chunks));
+    });
+  });
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  server.listen(port, host, () => {
+    const address = server.address();
+    const boundPort = typeof address === 'object' && address ? address.port : port;
+    process.stdout.write(`Codex-Ollama adapter ready at http://${host}:${boundPort}\n`);
+  });
+  return server;
+}
+
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isDirectRun) {
+  const server = startAdapter();
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => server.close(() => process.exit(0)));
+  }
 }

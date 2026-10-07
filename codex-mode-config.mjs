@@ -63,6 +63,28 @@ function setTopValues(text, values) {
   return [...settings, ...top, ...lines.slice(boundary)].join(newline);
 }
 
+function setTableValues(text, tableName, values) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const keys = managedTables[tableName];
+  let start = lines.findIndex((line) => line.trim() === `[${tableName}]`);
+  if (start < 0) {
+    if (!keys.some((key) => values[key] !== null && values[key] !== undefined)) return text;
+    lines.push(`[${tableName}]`);
+    start = lines.length - 1;
+  }
+  const endRelative = lines.slice(start + 1).findIndex((line) => /^\[/.test(line));
+  const end = endRelative < 0 ? lines.length : start + 1 + endRelative;
+  const body = lines.slice(start + 1, end).filter((line) =>
+    !keys.some((key) => new RegExp(`^${key}\\s*=`).test(line))
+  );
+  const settings = keys
+    .filter((key) => values[key] !== null && values[key] !== undefined)
+    .map((key) => `${key} = ${values[key]}`);
+  lines.splice(start + 1, end - start - 1, ...settings, ...body);
+  return lines.join(newline);
+}
+
 function removeManagedProvider(text) {
   const newline = text.includes('\r\n') ? '\r\n' : '\n';
   const result = [];

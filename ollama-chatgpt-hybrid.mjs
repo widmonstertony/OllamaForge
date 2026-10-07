@@ -157,7 +157,16 @@ export function atomicWrite(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const temporaryPath = `${filePath}.hybrid-${process.pid}-${Date.now()}`;
   fs.writeFileSync(temporaryPath, content, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temporaryPath, filePath);
+  try {
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    // Windows does not consistently allow rename-over-existing, especially for
+    // files watched by desktop apps. Copying still replaces the contents in one
+    // open/write operation and keeps the original path available throughout.
+    if (process.platform !== 'win32' || !['EPERM', 'EEXIST', 'EACCES'].includes(error.code)) throw error;
+    fs.copyFileSync(temporaryPath, filePath);
+    fs.rmSync(temporaryPath, { force: true });
+  }
   if (process.platform !== 'win32') fs.chmodSync(filePath, 0o600);
 }
 
@@ -178,7 +187,13 @@ export function restoreFiles(snapshot) {
     fs.mkdirSync(path.dirname(entry.filePath), { recursive: true, mode: 0o700 });
     const temporaryPath = `${entry.filePath}.restore-${process.pid}-${Date.now()}`;
     fs.writeFileSync(temporaryPath, entry.content, { mode: entry.mode });
-    fs.renameSync(temporaryPath, entry.filePath);
+    try {
+      fs.renameSync(temporaryPath, entry.filePath);
+    } catch (error) {
+      if (process.platform !== 'win32' || !['EPERM', 'EEXIST', 'EACCES'].includes(error.code)) throw error;
+      fs.copyFileSync(temporaryPath, entry.filePath);
+      fs.rmSync(temporaryPath, { force: true });
+    }
     if (process.platform !== 'win32') fs.chmodSync(entry.filePath, entry.mode);
   }
 }

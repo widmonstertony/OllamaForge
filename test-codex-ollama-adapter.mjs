@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import { once } from 'node:events';
-import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
 
 const incoming = [];
 const upstream = http.createServer(async (req, res) => {
@@ -63,34 +60,15 @@ upstream.listen(0, '127.0.0.1');
 await once(upstream, 'listening');
 const upstreamPort = upstream.address().port;
 
-const portProbe = http.createServer();
-portProbe.listen(0, '127.0.0.1');
-await once(portProbe, 'listening');
-const adapterPort = portProbe.address().port;
-await new Promise((resolve) => portProbe.close(resolve));
-
-const child = spawn(process.execPath, [fileURLToPath(new URL('./codex-ollama-adapter.mjs', import.meta.url))], {
-  env: {
-    ...process.env,
-    CODEX_OLLAMA_ADAPTER_PORT: String(adapterPort),
-    OLLAMA_BASE_URL: `http://127.0.0.1:${upstreamPort}`,
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-let childError = '';
-child.stderr.on('data', (chunk) => { childError += chunk.toString(); });
+process.env.OLLAMA_BASE_URL = `http://127.0.0.1:${upstreamPort}`;
+const { startAdapter } = await import('./codex-ollama-adapter.mjs');
+const adapter = startAdapter({ port: 0 });
+await once(adapter, 'listening');
+const adapterPort = adapter.address().port;
 
 try {
-  let ready = false;
-  for (let attempt = 0; attempt < 30; attempt++) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${adapterPort}/health`);
-      if (response.ok) { ready = true; break; }
-    } catch { /* Startup race. */ }
-    if (child.exitCode !== null) throw new Error(`Adapter exited: ${childError}`);
-    await delay(100);
-  }
-  assert.ok(ready, `Adapter did not start: ${childError}`);
+  const health = await fetch(`http://127.0.0.1:${adapterPort}/health`);
+  assert.equal(health.status, 200);
 
   async function send(model, effort, legacyPreset) {
     const response = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
@@ -304,6 +282,6 @@ try {
 
   console.log('PASS: model routing, reasoning, namespace/App/CUA bridge, history, images, credentials, and streaming output translation.');
 } finally {
-  child.kill();
+  await new Promise((resolve) => adapter.close(resolve));
   await new Promise((resolve) => upstream.close(resolve));
 }
