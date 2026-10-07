@@ -119,8 +119,16 @@ export function mergeCodexCloudCatalog(configPath, cloudCatalog, installed) {
   if (!catalogPath || !fs.existsSync(catalogPath)) return null;
   const generated = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
   const installedSlugs = new Set(installed.map((name) => canonical(name).toLowerCase()));
-  const localModels = (generated.models ?? []).filter((entry) =>
-    installedSlugs.has(canonical(entry?.slug).toLowerCase()));
+  const localModels = (generated.models ?? [])
+    .filter((entry) => installedSlugs.has(canonical(entry?.slug).toLowerCase()))
+    .map((entry) => {
+      const slug = canonical(entry.slug);
+      return {
+        ...entry,
+        slug,
+        display_name: entry.display_name === entry.slug ? slug : entry.display_name,
+      };
+    });
   const localSlugs = new Set(localModels.map((entry) => canonical(entry.slug).toLowerCase()));
   const cloudModels = cloudCatalog.models.filter((entry) =>
     entry?.slug && !localSlugs.has(canonical(entry.slug).toLowerCase()));

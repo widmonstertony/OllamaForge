@@ -134,11 +134,12 @@ try {
 
   assert.equal(selectCloudDefault({ models: [{ slug: 'gpt-new' }] }, 'gpt-stale'), 'gpt-new');
   fs.writeFileSync(configPath, `model_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
-  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{ slug: 'gpt-old' }, { slug: 'qwen3.5:9b' }] }));
-  const merged = mergeCodexCloudCatalog(configPath, { models: [{ slug: 'gpt-new' }] }, ['qwen3.5:9b']);
+  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{ slug: 'gpt-old' }, { slug: 'qwen3.5:9b:latest', display_name: 'qwen3.5:9b:latest' }] }));
+  const merged = mergeCodexCloudCatalog(configPath, { models: [{ slug: 'gpt-new' }] }, ['qwen3.5:9b:latest']);
   assert.deepEqual(merged, { catalogPath, cloudModels: 1, localModels: 1 });
-  assert.deepEqual(JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models.map((entry) => entry.slug),
-    ['gpt-new', 'qwen3.5:9b']);
+  const mergedModels = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
+  assert.deepEqual(mergedModels.map((entry) => entry.slug), ['gpt-new', 'qwen3.5:9b']);
+  assert.equal(mergedModels[1].display_name, 'qwen3.5:9b');
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }
