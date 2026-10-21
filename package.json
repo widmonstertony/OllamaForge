@@ -24,6 +24,6 @@
     "test:live": "node test-live-ollama.mjs"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.22.1 <25 || >=26.12.1 <27"
   }
 }
