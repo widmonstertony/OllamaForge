@@ -4,6 +4,7 @@
 !README.md
 !README.zh-CN.md
 !package.json
+!.nvmrc
 !codex-ollama-adapter.mjs
 !run-codex-ollama-adapter.mjs
 !codex-mode-config.mjs
