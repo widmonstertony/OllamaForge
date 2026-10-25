@@ -1,5 +1,65 @@
 # OllamaForge
 
+On another Windows or macOS computer, install the prerequisites below, pull/clone
+this repository and run `npm run setup`. This connects that computer's existing
+Ollama models and discovers its own Codex installation; it copies no account,
+plugin permissions, model files or absolute paths from the original PC.
+
+## Strata: Qwen3.8 Flash 128K (Windows)
+
+The optional Windows x64 preset targets 64 GB-class RAM and NVIDIA 12 GB+ VRAM
+(tested live on a 64 GB / RTX 4090 Laptop 16 GB machine). It runs
+Qwen3.8-Flash-Next 125B IQ3_S at 131,072 tokens, q4_0 KV, MTP off,
+CPU vision and one request at a time, with 2 GiB VRAM reserved for the desktop.
+Model downloads are explicit (~84 GB). The installer checks RAM/GPU compatibility
+before downloading, selects the NVIDIA GPU with the most VRAM and adapts its host
+expert budget to RAM (40 GiB on a 64 GB-class PC, capped at 48 GiB on larger PCs).
+Strata further clamps this to available RAM/Windows commit capacity.
+All experts remain available across GPU, RAM and SSD;
+64 GB does not guarantee that every weight stays in RAM beside other applications.
+
+```powershell
+# Check hardware before downloading; no model or service is started.
+npm run check:strata
+# Install/download and enable login startup in one command.
+# Defaults to Strata-data beside the repo; choose a local SSD with 95 GB free.
+npm run download:strata -- -EnableStartup
+# Optional custom location (example; choose the appropriate disk on that PC):
+# npm run download:strata -- -DataDirectory "$env:USERPROFILE\Strata-data" -EnableStartup
+# Connect an already running Strata 128K preset; downloads nothing.
+npm run setup:strata
+# Start installed services automatically at Windows user login, without the shortcut.
+npm run startup:strata
+```
+
+Automatic startup uses a limited, current-user scheduled task. It starts the cloud
+gateway and bridge before loading the saved local model, then recovers stopped
+services every 30 seconds. Initial model loading still takes time. It does not
+restart Codex, download weights, refresh catalogs, or replace another running
+Strata preset. Logs: `%LOCALAPPDATA%\OllamaForge\startup.log`.
+Disable it with `npm run startup:strata:disable`.
+Strata-only PCs do not need a second model installed in Ollama. Ollama itself is
+still required for the cloud gateway. A normal `npm run setup` on smaller/other-GPU
+PCs connects their existing Ollama models; it never installs this large preset.
+Custom Strata installations can set `STRATA_TERMINAL_PATH` to their launcher.
+
+After reopening Codex, select **Strata · Qwen3.8 Flash 128K (IQ3_S)**.
+The existing **本地 Codex（GUI）** shortcut starts the saved Strata preset,
+the local bridge and Ollama before refreshing the model list and reopening Codex.
+The native cloud default is preserved. Cloud metadata refreshes from the installed
+Codex on every connection; only the exact Strata model ID routes to Strata.
+Cloud credentials are stripped from Strata requests. All local listeners bind to
+127.0.0.1. Strata remains an independent runtime; its weights are not imported into Ollama.
+
+```powershell
+npm run test:strata
+npm run test:strata-startup
+$env:CODEX_RESPONSES_URL='http://127.0.0.1:11436/api/codex/v1/responses'
+npm run test:live -- qwen3.8-flash-next-iq3_s
+# Optional real 128K-window test (about 125,000 input tokens).
+npm run test:strata-context
+```
+
 **English** | [简体中文](README.zh-CN.md)
 
 Add models that are **already installed in Ollama** to the Codex/ChatGPT desktop
@@ -22,10 +82,18 @@ approval system.
 
 Requirements:
 
-- Node.js 24 or newer;
+- Node.js 24.22.1+ within 24.x, or 26.12.1+ within 26.x;
 - a current Ollama release with `ollama launch chatgpt` support;
 - Codex/ChatGPT opened and signed in at least once so `~/.codex/config.toml` exists;
-- at least one local Ollama model that you installed or imported yourself.
+- at least one local Ollama model that you installed or imported yourself
+  (not required for the optional Strata-only flow above).
+
+Each computer must sign in to Codex and authorize its own Chrome/computer-control
+plugins. OllamaForge preserves these tools but cannot transfer their permissions.
+The automatic hardware checks are compatibility checks, not a performance guarantee
+on every GPU. CI covers Windows/macOS plus platform-independent tests on Linux;
+Linux desktop integration and AMD/Apple-GPU Strata installation are not provided
+by this Windows Strata installer.
 
 This repository has no npm dependencies. You do not need to run `npm install`
 after cloning it.

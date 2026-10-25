@@ -31,11 +31,8 @@ function Resolve-Executable([string]$Name, [string[]]$Candidates, [string]$Searc
 }
 
 function Resolve-Node {
-    Resolve-Executable 'node' @(
-        (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\node.exe')
-    ) (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') 'node.exe'
+    . (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1')
+    Resolve-OllamaForgeNode
 }
 
 function Resolve-Ollama {
@@ -106,6 +103,11 @@ function Get-CodexAppId {
 try {
     Write-LauncherLog "BEGIN PrepareOnly=$PrepareOnly SkipConnect=$SkipConnect Repo=$PSScriptRoot"
     Ensure-OllamaReady
+
+    $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex' }
+    if (Test-Path -LiteralPath (Join-Path $codexHome 'ollamaforge-strata.json')) {
+        & (Join-Path $PSScriptRoot 'Setup-Strata.ps1') -RuntimeOnly
+    }
 
     if (-not $SkipConnect) {
         $node = Resolve-Node

@@ -71,14 +71,14 @@ try {
   };
   fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
   const listed = connect({ list: true, dependencies: {
-    platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand,
+    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand,
   } });
   assert.deepEqual(listed.installed, ['qwen3.5:9b']);
   assert.ok(!calls.some((args) => args[0] === 'launch'));
   calls.length = 0;
 
   connect({ dependencies: {
-    platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
+    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
     refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
   } });
   assert.ok(calls.at(-1).includes('--config'));
@@ -107,7 +107,7 @@ try {
   calls.length = 0;
   let restartPlatform = null;
   const launched = connect({ launch: true, noShortcut: true, dependencies: {
-    platform: 'win32', homeDir: work, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'unused',
+    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'unused',
     refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
     restartCodex: (platform) => { restartPlatform = platform; },
   } });

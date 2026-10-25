@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { atomicWrite, decodedTopString, setTopValue } from './ollama-chatgpt-hybrid.mjs';
 import { findCodexApplicationName, installDirectShortcut } from './macos/install-direct-shortcut.mjs';
 import { resolveOllamaExecutable } from './setup.mjs';
+import { configureStrata, strataEnabled } from './strata-config.mjs';
+import { STRATA_MODEL } from './strata-codex-bridge.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const endpoint = 'http://127.0.0.1:11434/api/codex/v1';
@@ -269,6 +271,28 @@ export function configureHttpProvider(configPath) {
   return providerId;
 }
 
+// Ollama writes ~/.codex even when Codex uses a custom CODEX_HOME. Adopt only
+// generated integration values; preserve the user's actual settings and plugins.
+export function adoptOllamaIntegration(configPath, homeDir = os.homedir()) {
+  const generatedPath = path.join(homeDir, '.codex', 'config.toml');
+  if (path.resolve(generatedPath) === path.resolve(configPath) || !fs.existsSync(generatedPath)) return false;
+  const generated = fs.readFileSync(generatedPath, 'utf8');
+  if (decodedTopString(generated, 'openai_base_url') !== endpoint) return false;
+  const sourceCatalog = decodedTopString(generated, 'model_catalog_json');
+  if (!sourceCatalog || !fs.existsSync(sourceCatalog)) throw new Error('Ollama generated no usable model catalog.');
+  const configDir = path.dirname(configPath);
+  const targetCatalog = path.join(configDir, 'ollama-launch-models.json');
+  atomicWrite(targetCatalog, fs.readFileSync(sourceCatalog, 'utf8'));
+  const routingName = 'ollama-launch-codex-routing.json';
+  const sourceRouting = path.join(path.dirname(generatedPath), routingName);
+  if (fs.existsSync(sourceRouting)) atomicWrite(path.join(configDir, routingName), fs.readFileSync(sourceRouting, 'utf8'));
+  let text = fs.readFileSync(configPath, 'utf8');
+  text = setTopValue(text, 'openai_base_url', JSON.stringify(endpoint));
+  text = setTopValue(text, 'model_catalog_json', JSON.stringify(targetCatalog));
+  atomicWrite(configPath, text);
+  return true;
+}
+
 function installShortcut(platform = process.platform) {
   if (platform === 'win32') {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
@@ -315,7 +339,8 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
   }
   const homeDir = dependencies.homeDir ?? os.homedir();
-  const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform });
+  const environment = dependencies.environment ?? process.env;
+  const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
   const runCommand = dependencies.runCommand ?? run;
 
   if (list) {
@@ -323,10 +348,17 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     return { listed: true, installed: parseInstalledModels(result.stdout) };
   }
 
-  const configPath = path.join(process.env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
+  const configPath = path.join(environment.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
   if (!fs.existsSync(configPath)) throw new Error(`Codex config not found: ${configPath}. Open Codex once, then retry.`);
 
   if (disconnect) {
+    const strataBackup = path.join(path.dirname(configPath), 'ollamaforge-strata-backup.toml');
+    if (strataEnabled(configPath) && fs.existsSync(strataBackup)) {
+      atomicWrite(configPath, fs.readFileSync(strataBackup, 'utf8'));
+      fs.rmSync(path.join(path.dirname(configPath), 'ollamaforge-strata.json'), { force: true });
+      fs.rmSync(strataBackup, { force: true });
+      return { disconnected: true };
+    }
     runCommand(ollama, ['launch', 'chatgpt', '--restore']);
     return { disconnected: true };
   }
@@ -343,7 +375,7 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     cloudCatalog = refresh
       ? refresh()
       : refreshCodexCloudCatalog({
-          codexExecutable: dependencies.codexExecutable ?? resolveCodexExecutable({ platform, homeDir }),
+          codexExecutable: dependencies.codexExecutable ?? resolveCodexExecutable({ platform, homeDir, environment }),
           configDir: path.dirname(configPath),
           runCommand,
         });
@@ -352,11 +384,35 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     catalogRefreshWarning = error.message;
   }
   const primary = selectPrimaryModel(installed, model, current);
-  if (!primary) {
+  const strataOnly = !primary && strataEnabled(configPath);
+  if (!primary && !strataOnly) {
     throw new Error('No local Ollama model is installed. Install one explicitly with Ollama, then rerun npm run setup. OllamaForge setup never downloads a model.');
   }
   const launchArgs = ['launch', 'chatgpt', '--config', '--model', primary, '--yes'];
-  runCommand(ollama, launchArgs);
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.copyFileSync(configPath, path.join(backupDir, `config.toml.pre-ollamaforge-${Date.now()}`));
+  if (strataOnly) {
+    // Strata is not an Ollama model. Never ask Ollama to pull its model ID just
+    // to create a catalog on a fresh PC with an otherwise empty Ollama library.
+    if (!cloudCatalog?.models?.length) throw new Error('Cannot initialize Strata without a native cloud catalog. Open and sign in to Codex, then retry.');
+    const configDir = path.dirname(configPath);
+    const nativeBackup = path.join(configDir, 'ollamaforge-strata-backup.toml');
+    if (!fs.existsSync(nativeBackup)) fs.copyFileSync(configPath, nativeBackup);
+    const catalogPath = path.join(configDir, 'ollama-launch-models.json');
+    atomicWrite(catalogPath, `${JSON.stringify(cloudCatalog, null, 2)}\n`);
+    // Ollama's cloud gateway requires a routing file even with no Ollama models.
+    const routingDir = path.join(homeDir, '.codex');
+    fs.mkdirSync(routingDir, { recursive: true });
+    const routingPath = path.join(routingDir, 'ollama-launch-codex-routing.json');
+    if (!fs.existsSync(routingPath)) atomicWrite(routingPath, '{"models":[]}\n');
+    let text = fs.readFileSync(configPath, 'utf8');
+    text = setTopValue(text, 'openai_base_url', JSON.stringify(endpoint));
+    text = setTopValue(text, 'model_catalog_json', JSON.stringify(catalogPath));
+    atomicWrite(configPath, text);
+  } else {
+    runCommand(ollama, launchArgs);
+    adoptOllamaIntegration(configPath, homeDir);
+  }
   const configured = fs.readFileSync(configPath, 'utf8');
   if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
     throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
@@ -366,12 +422,13 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   const tunedCatalogModels = tuneCodexCatalog(configPath);
   cloudDefault ??= findCloudDefault(configPath, installed, backupDir);
   const selectedModelPreserved = preserveSelectedModel(configPath, cloudDefault);
+  const strata = strataEnabled(configPath) ? configureStrata(configPath) : null;
   const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
   if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
   return {
     disconnected: false,
-    primary,
-    defaultModel: cloudDefault ?? primary,
+    primary: primary ?? STRATA_MODEL,
+    defaultModel: cloudDefault ?? primary ?? STRATA_MODEL,
     installed,
     endpoint,
     shortcut,
@@ -380,6 +437,7 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     selectedModelPreserved,
     mergedCatalog,
     catalogRefreshWarning,
+    strata: strata?.slug ?? null,
   };
 }
 

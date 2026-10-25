@@ -1,5 +1,59 @@
 # OllamaForge
 
+另一台 Windows/macOS 电脑装好下方前置软件后，pull/clone 本仓库并运行
+`npm run setup`，即可连接那台电脑已有的 Ollama 模型并发现它自己的 Codex 安装。
+不会复制原电脑的账号、插件授权、模型权重或绝对路径。
+
+## Strata：Qwen3.8 Flash 128K（Windows）
+
+可选安装器面向 Windows x64、64GB 级内存和 NVIDIA 12GB 以上显存；
+已在 64GB / RTX 4090 Laptop 16GB 上实机验证。配置为：
+Qwen3.8-Flash-Next 125B IQ3_S、131,072 tokens、q4_0 KV、MTP 关闭、
+CPU 图片输入、单并发，并为桌面预留 2GiB 显存。
+约 84GB 的模型下载需要明确执行下载命令。下载前检查 RAM/GPU 兼容性，
+选择显存最大的 NVIDIA GPU，按内存调整专家缓存（64GB 级机器为 40GiB，
+更大内存机器最多 48GiB），Strata 再按可用内存和 Windows 提交空间自动缩小。
+GPU、RAM、SSD 分层保留全部专家；64GB 并不保证同时开其他应用时所有权重都驻留内存。
+
+```powershell
+# 下载前检查硬件，不启动模型或服务。
+npm run check:strata
+# 一个命令安装/下载，并开启登录自动启动。
+# 默认放在 repo 旁边的 Strata-data；请选择至少空闲 95GB 的本地 SSD。
+npm run download:strata -- -EnableStartup
+# 如需自定义位置（示例；按那台电脑的磁盘情况选择）：
+# npm run download:strata -- -DataDirectory "$env:USERPROFILE\Strata-data" -EnableStartup
+# 接入已经运行的 Strata 128K 预设，不下载模型。
+npm run setup:strata
+# 登录 Windows 后自动启动已有模型和连接服务，不再需要桌面快捷方式。
+npm run startup:strata
+```
+
+重新打开 Codex 后，在模型列表选择 **Strata · Qwen3.8 Flash 128K (IQ3_S)**。
+桌面的 **本地 Codex（GUI）** 快捷方式会启动已保存的 Strata 预设、
+本地桥接和 Ollama，然后刷新模型目录并重新打开 Codex。
+保留原有云端默认模型，每次连接都从当前安装的 Codex 刷新云端模型信息；
+只有准确匹配 Strata ID 的请求才发给 Strata，云端凭据不会发给它。
+本地服务仅监听 127.0.0.1。Strata 独立运行，权重不导入 Ollama。
+
+自动启动使用当前用户的普通权限计划任务，先启动云端网关和桥接，再加载本地模型；
+首次加载仍需等待权重就绪。每 30 秒检查一次并恢复停止的服务，不重启 Codex、
+不重新下载、不覆盖模型目录，也不会替换正在运行的其他 Strata 预设。
+日志：`%LOCALAPPDATA%\OllamaForge\startup.log`。
+关闭自动启动：`npm run startup:strata:disable`。
+纯 Strata 安装不需要在 Ollama 中再下载第二个模型；Ollama 程序仍用于云端网关。
+小内存或其他 GPU 的电脑使用普通 `npm run setup`，连接其已有的 Ollama 模型，
+不会安装这个大预设。自定义 Strata 安装可设置 `STRATA_TERMINAL_PATH` 指向启动器。
+
+```powershell
+npm run test:strata
+npm run test:strata-startup
+$env:CODEX_RESPONSES_URL='http://127.0.0.1:11436/api/codex/v1/responses'
+npm run test:live -- qwen3.8-flash-next-iq3_s
+# 可选：实际 128K 窗口测试（约 125,000 输入 tokens）。
+npm run test:strata-context
+```
+
 [English](README.md) | **简体中文**
 
 把**已经安装在本机 Ollama 中的模型**加入 Codex/ChatGPT 桌面端，同时保留
@@ -20,10 +74,16 @@
 
 要求：
 
-- Node.js 24 或更新版本；
+- Node.js 24.x 中的 24.22.1+，或 26.x 中的 26.12.1+；
 - 当前版 Ollama，且支持 `ollama launch chatgpt`；
 - 已登录并至少打开过一次 Codex/ChatGPT，使 `~/.codex/config.toml` 存在；
-- 至少一个由用户自己安装或导入的本地 Ollama 模型。
+- 至少一个由用户自己安装或导入的本地 Ollama 模型
+  （上方可选的纯 Strata 流程不需要）。
+
+每台电脑需要自己登录 Codex，并授权 Chrome/电脑控制插件；本仓库保留这些能力，
+不能转移另一台机器的插件权限。自动硬件检查是兼容性检查，无法保证每款 GPU
+都有同样性能。CI 覆盖 Windows/macOS，并在 Linux 跑平台无关测试；此 Windows
+Strata 安装器不提供 Linux 桌面接入，也不安装 AMD/Apple GPU 的 Strata 后端。
 
 本仓库没有 npm 依赖，clone 后不需要先运行 `npm install`。
 
