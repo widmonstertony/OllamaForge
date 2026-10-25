@@ -22,6 +22,9 @@
 !strata-codex-bridge.mjs
 !strata-context.mjs
 !test-strata-context-policy.mjs
+!desktop-smoke.mjs
+!test-desktop-smoke.mjs
+!DESKTOP-CONTROL.md
 !strata-config.mjs
 !strata-setup.mjs
 !Setup-Strata.ps1

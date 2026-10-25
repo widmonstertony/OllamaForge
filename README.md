@@ -310,6 +310,20 @@ Offline regression suite:
 npm test
 ```
 
+For actual Windows Computer Use, Chrome and GitHub checks, follow
+[DESKTOP-CONTROL.md](DESKTOP-CONTROL.md). Start a fresh fixture with
+`npm run test:desktop:prepare`; validate the test harness with
+`npm run test:desktop-policy`. The on-device check requires real typing/saving,
+a close/reopen cycle, a browser form submission and a GitHub write/read-back.
+Missing checks fail; a passing unit suite does not certify desktop access.
+
+On each computer, approve the target app in Codex when prompted. Packaged Notepad
+can hand off from its launcher to a different app identifier; re-enumerate the
+actual windows. If accessibility is empty, use a fresh window screenshot.
+GitHub connector writes that return 403 use the already-authenticated Git/GitHub
+CLI fallback; the connector can still supply reads. App approvals and credentials
+are obtained on each machine and are never copied from this repository.
+
 Live Codex/Ollama gateway test:
 
 ```sh

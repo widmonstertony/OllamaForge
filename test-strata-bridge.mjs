@@ -38,6 +38,9 @@ await once(bridge, 'listening');
 const base = `http://127.0.0.1:${bridge.address().port}`;
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-strata-test-'));
 try {
+  const health = await fetch(`${base}/health`).then(r => r.json());
+  assert.equal(health.contextPolicy, 'desktop-v1');
+  assert.equal(health.desktopControl, 'native-v1');
   const payload = { model: STRATA_MODEL, input: 'ping', tools: [{ type: 'namespace', name: 'test', tools: [{ type: 'function', name: 'ping' }] }] };
   const compressed = zlib.gzipSync(JSON.stringify(payload));
   const response = await fetch(`${base}/api/codex/v1/responses`, { method: 'POST', headers: { authorization: 'Bearer must-not-reach-local', 'chatgpt-account-id': 'private-account', cookie: 'private-cookie', 'content-type': 'application/json', 'content-encoding': 'gzip' }, body: compressed });

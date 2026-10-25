@@ -276,6 +276,18 @@ npm run download:27b
 npm test
 ```
 
+Windows 原生电脑控制、Chrome 和 GitHub 的实际验收见
+[DESKTOP-CONTROL.md](DESKTOP-CONTROL.md)。运行
+`npm run test:desktop:prepare` 创建本机测试文件；
+`npm run test:desktop-policy` 检查验收脚本本身。实际验收必须完成输入保存、
+关闭重开、浏览器表单提交，以及 GitHub 上传后回读；缺一项即失败。
+单元测试通过不代表已验证本机桌面控制。
+
+每台电脑首次控制应用时，需要按 Codex 提示允许。新版记事本可能从启动器
+转交给另一个应用标识，应重新枚举实际窗口；辅助功能为空时使用新的窗口截图。
+GitHub 连接器写入返回 403 时，改用本机已经登录的 Git/GitHub CLI 上传，
+连接器仍可用于读取。应用授权和登录信息由每台电脑自行取得，不会从仓库复制。
+
 真实 Codex/Ollama 网关验收：
 
 ```sh

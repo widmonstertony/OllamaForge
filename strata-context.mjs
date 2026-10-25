@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 // Report sizes and tool identifiers only; never retain prompts, arguments,
 // results, headers, or account credentials in diagnostics.
 export function describeContext(request) {
@@ -20,7 +22,7 @@ export function describeContext(request) {
 
 const OPTIONAL_NAMESPACES = /^(?:mcp__)?(?:codex_apps__)?(?:chatgpt_space|sites|pets|artifact_session|codex_document_control)(?:__|$)/;
 const MAX_OUTPUT_CHARACTERS = 16000;
-const CONTEXT_GUIDANCE = 'OllamaForge local context policy: use bounded file reads and targeted searches. For JSON, select needed fields instead of dumping entire documents. Avoid recursive runtime/model directory listings. Set tool output limits near 4000 tokens. Keep concise progress notes and continue from them after compaction. Computer control, browser/Chrome, GitHub and core coding tools remain available with their original schemas.';
+const CONTEXT_GUIDANCE = 'OllamaForge local context policy: use bounded file reads and targeted searches. For JSON, select needed fields instead of dumping entire documents. Avoid recursive runtime/model directory listings. Set tool output limits near 4000 tokens. Keep concise progress notes and continue from them after compaction. Computer control, browser/Chrome, GitHub and core coding tools remain available with their original schemas. For Windows native control, follow the installed Computer Use skill and '+fileURLToPath(new URL('./DESKTOP-CONTROL.md',import.meta.url))+'. Recover launcher aliases by re-enumerating actual windows; app approval timeouts require user action; null accessibility needs a screenshot, not a failed verdict. Verify real input and saved content before reporting success.';
 
 function shorten(text) {
   if (typeof text !== 'string' || text.length <= MAX_OUTPUT_CHARACTERS) return text;
@@ -66,7 +68,7 @@ export function optimizeContext(request, { reasoningBudget = 4096 } = {}) {
   }
   if (documentation.length) result.instructions = `${request.instructions ?? ''}\n\n${documentation.join('\n\n')}`;
   if (result.tools?.length && !(result.instructions ?? '').includes(CONTEXT_GUIDANCE)) {
-    result.instructions = `${result.instructions ?? ''}\n\n${CONTEXT_GUIDANCE}`;
+    result.instructions = `${result.instructions ?? ''}\n\n${CONTEXT_GUIDANCE}\nIf GitHub connector writes return 403, inspect the user's repository permission and use already-authenticated git/gh for authorized writes; verify by reading back. Do not repeatedly retry a connector that lacks installation write permission.`;
   }
   if (request.reasoning?.effort && request.reasoning.effort !== 'none' &&
       request.reasoning_budget_tokens == null && request.thinking_budget_tokens == null) {

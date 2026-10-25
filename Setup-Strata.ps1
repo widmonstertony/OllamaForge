@@ -55,7 +55,7 @@ if ($CheckRuntimePaths) {
 }
 
 $bridgeReady = $false
-try { $h = Invoke-RestMethod 'http://127.0.0.1:11436/health' -TimeoutSec 2; $bridgeReady = ($h.service -eq 'ollamaforge-strata-bridge' -and $h.model -eq 'qwen3.8-flash-next-iq3_s' -and $h.contextPolicy -eq 'desktop-v1') } catch {}
+try { $h = Invoke-RestMethod 'http://127.0.0.1:11436/health' -TimeoutSec 2; $bridgeReady = ($h.service -eq 'ollamaforge-strata-bridge' -and $h.model -eq 'qwen3.8-flash-next-iq3_s' -and $h.contextPolicy -eq 'desktop-v1' -and $h.desktopControl -eq 'native-v1') } catch {}
 $bridge = Join-Path $PSScriptRoot 'strata-codex-bridge.mjs'
 $taskName = 'OllamaForgeStrataBridge'
 $runner = Join-Path $PSScriptRoot 'Run-StrataBridge.ps1'
@@ -110,8 +110,8 @@ if (-not $bridgeReady) {
     do {
         Start-Sleep -Milliseconds 300
         try { $h = Invoke-RestMethod 'http://127.0.0.1:11436/health' -TimeoutSec 2 } catch { $h = $null }
-    } while (($h.service -ne 'ollamaforge-strata-bridge' -or $h.model -ne 'qwen3.8-flash-next-iq3_s' -or $h.contextPolicy -ne 'desktop-v1') -and (Get-Date) -lt $deadline)
-    if ($h.service -ne 'ollamaforge-strata-bridge' -or $h.model -ne 'qwen3.8-flash-next-iq3_s' -or $h.contextPolicy -ne 'desktop-v1') { throw 'OllamaForge Strata bridge failed to start. Check the bridge stderr log.' }
+    } while (($h.service -ne 'ollamaforge-strata-bridge' -or $h.model -ne 'qwen3.8-flash-next-iq3_s' -or $h.contextPolicy -ne 'desktop-v1' -or $h.desktopControl -ne 'native-v1') -and (Get-Date) -lt $deadline)
+    if ($h.service -ne 'ollamaforge-strata-bridge' -or $h.model -ne 'qwen3.8-flash-next-iq3_s' -or $h.contextPolicy -ne 'desktop-v1' -or $h.desktopControl -ne 'native-v1') { throw 'OllamaForge Strata bridge failed to start. Check the bridge stderr log.' }
 }
 if (-not $RuntimeOnly -and -not $InfrastructureOnly) {
     & $node (Join-Path $PSScriptRoot 'strata-setup.mjs')

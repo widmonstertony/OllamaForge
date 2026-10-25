@@ -15,6 +15,9 @@ const source = { instructions: 'Preserve all original instructions.', reasoning:
 ] };
 const original = structuredClone(source);
 const out = optimizeContext(source);
+assert.match(out.instructions, /DESKTOP-CONTROL\.md/);
+assert.match(out.instructions, /app approval timeouts require user action/);
+assert.match(out.instructions, /GitHub connector writes return 403/);
 assert.deepEqual(source, original, 'Do not mutate request/history objects.');
 assert.deepEqual(out.tools.map(t => t.name), ['mcp__node_repl', 'mcp__cua_repl', 'mcp__codex_apps__github', 'exec_command']);
 for (const name of ['mcp__node_repl', 'mcp__cua_repl', 'mcp__codex_apps__github']) {

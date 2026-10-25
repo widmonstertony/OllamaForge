@@ -31,7 +31,7 @@ export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080'
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(value));
     };
-    if (req.url === '/health') return json(200, { status: 'ok', service: 'ollamaforge-strata-bridge', model: STRATA_MODEL, contextPolicy: 'desktop-v1' });
+    if (req.url === '/health') return json(200, { status: 'ok', service: 'ollamaforge-strata-bridge', model: STRATA_MODEL, contextPolicy: 'desktop-v1', desktopControl: 'native-v1' });
     if (req.url === '/context' && req.method === 'GET') return json(200, { model: STRATA_MODEL, lastContext });
     if (!req.url?.startsWith('/api/codex/v1/')) return json(404, { error: { message: 'Unknown bridge endpoint.' } });
     try {
