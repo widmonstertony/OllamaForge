@@ -25,7 +25,7 @@ try {
         try { $null = Get-StrataHardwareProfile @case } catch { $rejected = $true }
         if (-not $rejected) { throw 'Incompatible hardware must fail before model download.' }
     }
-    $terminal = Join-Path $testRoot 'Other User With Spaces\Strata\terminal'
+    $terminal = Join-Path $testRoot ('Other User With Spaces '+[char]0x7528+[char]0x6237+'\Strata\terminal')
     foreach ($version in @('0.1.9','0.1.49.2','current','0.2.0-beta')) {
         $bin = Join-Path (Join-Path $terminal $version) 'bin'
         New-Item -ItemType Directory -Path $bin -Force | Out-Null
@@ -54,6 +54,14 @@ try {
     $result | ConvertTo-Json | Set-Content $marker -Encoding UTF8
     Repair-StrataRuntimeAlias $testRoot
     if ((Get-Content -Raw $marker | ConvertFrom-Json).ready -ne $alias) { throw 'Mismatched ready file must not be adopted.' }
+    $unicodeUser = Join-Path $testRoot ('User '+[char]0x7528+[char]0x6237)
+    $unicodeAlias = Join-Path $unicodeUser ('AppData\Local\Strata\runtime\' + $name)
+    $result.ready = $unicodeAlias
+    $result.pid = 12345
+    [IO.File]::WriteAllText($marker, ($result | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false))
+    Repair-StrataRuntimeAlias -PackageCache $testRoot -UserProfile $unicodeUser
+    if ((Get-Content -Raw -Encoding UTF8 $marker | ConvertFrom-Json).ready -ne (Join-Path $physical $name)) { throw 'UTF-8 owner records with Unicode user names must be recovered.' }
+    Write-Host 'PASS: UTF-8 JSON without BOM and Unicode user profiles under Windows PowerShell 5.1.'
     Write-Host 'PASS: Store/desktop runtime alias recovery, backup, idempotence and mismatched-child refusal.'
 } finally {
     $env:STRATA_RUNTIME_DIR = $originalRuntime
