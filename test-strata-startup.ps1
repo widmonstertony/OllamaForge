@@ -2,10 +2,86 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Repair-StrataRuntimeAlias.ps1')
 . (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1')
 $originalRuntime = $env:STRATA_RUNTIME_DIR
+$originalFixture = $env:OLLAMAFORGE_RESTART_FIXTURE
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('ollamaforge-runtime-alias-' + [guid]::NewGuid().ToString('N'))
 $physical = Join-Path $testRoot 'Local\Strata\runtime'
 New-Item -ItemType Directory -Path $physical -Force | Out-Null
 try {
+    $readyPlan = [pscustomobject]@{ok=$true;plan=[pscustomobject]@{download=[pscustomobject]@{gb=0;parts=@();engine_missing=$false;engine_usable=$true}}}
+    Assert-OllamaForgeStrataPlanReady $readyPlan
+    $readyPlan.plan.download.gb = 1
+    $rejected=$false
+    try { Assert-OllamaForgeStrataPlanReady $readyPlan } catch { $rejected=$true }
+    if (-not $rejected) { throw 'Restart must not download missing model files.' }
+    $health = [pscustomobject]@{service='strata';model='qwen3.8-flash-next-iq3_s';loaded=$true;max_context=131072}
+    $metrics = [pscustomobject]@{live=[pscustomobject]@{state='idle';queued=0}}
+    Assert-OllamaForgeStrataRestart $health $metrics
+    $health.loaded=$false
+    $metrics.live.state='unloaded'
+    Assert-OllamaForgeStrataRestart $health $metrics
+    $health.loaded=$true
+    $metrics.live.state='generating'
+    $rejected=$false
+    try { Assert-OllamaForgeStrataRestart $health $metrics } catch { $rejected=$true }
+    if (-not $rejected) { throw 'Restart must protect an active local request.' }
+    Assert-OllamaForgeStrataRestart $health $metrics -Force
+    $health.model='another-model'
+    $rejected=$false
+    try { Assert-OllamaForgeStrataRestart $health $metrics -Force } catch { $rejected=$true }
+    if (-not $rejected) { throw 'Even forced restart must not replace another model.' }
+    Write-Host 'PASS: restart rejects missing files, protects active requests, and refuses another runtime.'
+    $fixture = Join-Path $testRoot 'Restart fixture with spaces'
+    New-Item -ItemType Directory -Path $fixture | Out-Null
+    $env:OLLAMAFORGE_RESTART_FIXTURE = $fixture
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Restart-Strata.ps1') -Destination (Join-Path $fixture 'Restart-Strata.ps1')
+    $common = (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1').Replace("'", "''")
+    $stub = ". '$common'`n" + @'
+function Initialize-OllamaForgeStrata { Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'fake-strata.ps1' }
+function Invoke-RestMethod { param($Uri,$TimeoutSec)
+    if ($Uri -like '*/metrics') { return [pscustomobject]@{live=[pscustomobject]@{state='idle';queued=0}} }
+    return [pscustomobject]@{service='strata';model='qwen3.8-flash-next-iq3_s';loaded=$true;max_context=131072}
+}
+function Get-ScheduledTask { param($TaskName,$ErrorAction)
+    $case = Get-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'case.json') -Raw | ConvertFrom-Json
+    $runner = Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'Start-StrataBackground.ps1'
+    $arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"'
+    if ($case.Foreign) { $arguments = 'another-checkout' }
+    return [pscustomobject]@{State=$(if($case.Enabled){'Running'}else{'Disabled'});Settings=[pscustomobject]@{Enabled=$case.Enabled};Actions=@([pscustomobject]@{Execute=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe');Arguments=$arguments})}
+}
+function Stop-ScheduledTask { param($TaskName) Add-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'events.txt') 'pause' }
+function Start-ScheduledTask { param($TaskName) Add-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'events.txt') 'resume' }
+'@
+    Set-Content -LiteralPath (Join-Path $fixture 'Strata-WindowsRuntime.ps1') -Value $stub -Encoding UTF8
+    @'
+$global:LASTEXITCODE = 0
+if ($args -contains '--plan') {
+    '{"ok":true,"plan":{"download":{"gb":0,"parts":[],"engine_missing":false,"engine_usable":true}}}'
+} elseif ($args -contains '--stop') { Add-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'events.txt') 'stop-owned-profile' }
+'@ | Set-Content -LiteralPath (Join-Path $fixture 'fake-strata.ps1') -Encoding UTF8
+    @'
+param([switch]$InfrastructureOnly,[switch]$RuntimeOnly)
+$case = Get-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'case.json') -Raw | ConvertFrom-Json
+if ($InfrastructureOnly) { Add-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'events.txt') 'infra' }
+if ($RuntimeOnly) {
+    Add-Content (Join-Path $env:OLLAMAFORGE_RESTART_FIXTURE 'events.txt') 'load'
+    if ($case.FailLoad) { throw 'Simulated model load failure' }
+}
+'@ | Set-Content -LiteralPath (Join-Path $fixture 'Setup-Strata.ps1') -Encoding UTF8
+    foreach ($case in @(
+        @{Enabled=$true;FailLoad=$false;Foreign=$false;Fails=$false;Events='pause,infra,stop-owned-profile,load,resume'},
+        @{Enabled=$true;FailLoad=$true;Foreign=$false;Fails=$true;Events='pause,infra,stop-owned-profile,load,resume'},
+        @{Enabled=$false;FailLoad=$false;Foreign=$false;Fails=$false;Events='infra,stop-owned-profile,load'},
+        @{Enabled=$true;FailLoad=$false;Foreign=$true;Fails=$true;Events=''}
+    )) {
+        $case | ConvertTo-Json | Set-Content (Join-Path $fixture 'case.json') -Encoding UTF8
+        Set-Content (Join-Path $fixture 'events.txt') -Value '' -Encoding UTF8
+        $failed = $false
+        try { & (Join-Path $fixture 'Restart-Strata.ps1') } catch { $failed = $true }
+        if ($failed -ne $case.Fails) { throw 'Restart failure propagation mismatch.' }
+        $events = (@(Get-Content (Join-Path $fixture 'events.txt') | Where-Object { $_ }) -join ',')
+        if ($events -ne $case.Events) { throw "Restart lifecycle mismatch: $events" }
+    }
+    Write-Host 'PASS: restart resumes its supervisor after success/failure, keeps disabled startup off and refuses another checkout.'
     foreach ($version in @('24.22.1','24.99.0','26.12.1')) {
         if (-not (Test-OllamaForgeNodeVersion ([version]$version))) { throw "Supported Node version rejected: $version" }
     }
@@ -65,6 +141,7 @@ try {
     Write-Host 'PASS: Store/desktop runtime alias recovery, backup, idempotence and mismatched-child refusal.'
 } finally {
     $env:STRATA_RUNTIME_DIR = $originalRuntime
+    $env:OLLAMAFORGE_RESTART_FIXTURE = $originalFixture
     # The generated absolute fixture directory is the sole recursive cleanup target.
     $resolved = [IO.Path]::GetFullPath($testRoot)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

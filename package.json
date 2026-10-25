@@ -8,6 +8,8 @@
     "setup": "node connect.mjs",
     "connect": "node connect.mjs",
     "setup:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Strata.ps1",
+    "start:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Start-StrataBackground.ps1 -Once",
+    "restart:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Restart-Strata.ps1",
     "check:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Strata.ps1 -CheckHardware",
     "startup:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Install-StrataStartup.ps1",
     "startup:strata:disable": "powershell -NoProfile -ExecutionPolicy Bypass -File Install-StrataStartup.ps1 -Disable",

@@ -65,6 +65,64 @@ function Get-StrataTerminalPath([string[]]$Roots) {
     return $null
 }
 
+function Initialize-OllamaForgeStrata([switch]$SkipRuntimeRepair) {
+    $packageCache = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache'
+    if ($env:STRATA_TERMINAL_PATH) {
+        if (-not (Test-Path -LiteralPath $env:STRATA_TERMINAL_PATH)) { throw 'STRATA_TERMINAL_PATH does not exist.' }
+        $launcher = $env:STRATA_TERMINAL_PATH
+    } else {
+        $launcher = Get-StrataTerminalPath -Roots @(
+            (Join-Path $packageCache 'Local\Strata\terminal'),
+            (Join-Path $env:LOCALAPPDATA 'Strata\terminal')
+        )
+        if (-not $launcher) {
+            $command = Get-Command strata -ErrorAction SilentlyContinue
+            if ($command) { $launcher = $command.Source }
+        }
+    }
+    if (-not $launcher) { return $null }
+    if ($launcher.StartsWith($packageCache, [StringComparison]::OrdinalIgnoreCase)) {
+        $presetCache = Join-Path $packageCache 'Roaming\Strata\launch-presets'
+        if (-not $env:STRATA_PROFILE_DIR -and (Test-Path -LiteralPath (Join-Path $presetCache 'codex-iq3_s-128k.json'))) {
+            $env:STRATA_PROFILE_DIR = Join-Path $packageCache 'Roaming\Strata\profiles'
+            if (-not $env:STRATA_LAUNCH_PRESET_DIR) { $env:STRATA_LAUNCH_PRESET_DIR = $presetCache }
+        }
+        foreach ($pair in @(@('STRATA_COMPONENTS_DIR','Local\Strata\components'), @('STRATA_RUNTIME_DIR','Local\Strata\runtime'))) {
+            $candidate = Join-Path $packageCache $pair[1]
+            if (-not [Environment]::GetEnvironmentVariable($pair[0]) -and (Test-Path -LiteralPath $candidate)) {
+                [Environment]::SetEnvironmentVariable($pair[0], $candidate, 'Process')
+            }
+        }
+    }
+    if (-not $SkipRuntimeRepair) {
+        . (Join-Path $PSScriptRoot 'Repair-StrataRuntimeAlias.ps1')
+        Repair-StrataRuntimeAlias $packageCache | Out-Host
+    }
+    return $launcher
+}
+
+function Assert-OllamaForgeStrataPlanReady($Plan) {
+    if (-not $Plan.ok -or $null -eq $Plan.plan.download -or $Plan.plan.download.gb -gt 0 -or
+        @($Plan.plan.download.parts).Count -gt 0 -or $Plan.plan.download.engine_missing -or -not $Plan.plan.download.engine_usable) {
+        throw 'Saved Strata runtime has missing components or model files. Start/restart never downloads; run npm run download:strata explicitly.'
+    }
+}
+
+function Assert-OllamaForgeStrataRestart($Health, $Metrics, [switch]$Force) {
+    if ($Health) {
+        if ($Health.service -ne 'strata' -or ($Health.model -and $Health.model -ne 'qwen3.8-flash-next-iq3_s') -or
+            ($Health.max_context -and $Health.max_context -ne 131072)) {
+            throw 'Port 8080 does not report the expected Strata IQ3_S 128K preset. Refusing to replace another runtime.'
+        }
+        if (-not $Force) {
+            $safeState = $Metrics.live -and ($Metrics.live.state -eq 'unloaded' -or ($Health.loaded -and $Metrics.live.state -eq 'idle'))
+            if (-not $safeState -or $Metrics.live.queued -gt 0) {
+                throw 'Strata is loading, busy, or its request state cannot be checked. Stop the local task first, or explicitly use npm run restart:strata -- -Force.'
+            }
+        }
+    }
+}
+
 function Get-StrataHardwareProfile([double]$RamGiB, [object[]]$Gpus, [string]$Architecture = 'AMD64') {
     if ($Architecture -notin @('AMD64','x64')) { throw 'This optional Strata installer requires Windows x64. Use npm run setup for other supported Ollama desktop systems.' }
     if ($RamGiB -lt 60) { throw 'The IQ3_S 125B preset requires a 64GB-class RAM system. Use npm run setup with a smaller installed Ollama model on this PC.' }

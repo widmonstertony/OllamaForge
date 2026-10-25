@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 $stateDir = Join-Path $env:LOCALAPPDATA 'OllamaForge'
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
 $log = Join-Path $stateDir 'startup.log'
-Start-Transcript -Path (Join-Path $stateDir 'startup-details.log') -Append | Out-Null
+$transcript = if ($Once) { 'start-details.log' } else { 'startup-details.log' }
+Start-Transcript -Path (Join-Path $stateDir $transcript) -Append | Out-Null
 function Write-State([string]$Message) {
     Add-Content -LiteralPath $log -Value ("{0:u} {1}" -f (Get-Date), $Message) -Encoding UTF8
 }
@@ -27,10 +28,19 @@ do {
             $strata = Get-Health 'http://127.0.0.1:8080/health'
         }
         # Do not replace another model or restart a model that is still loading.
-        if ($strata.loaded -and $strata.model -eq 'qwen3.8-flash-next-iq3_s' -and $strata.max_context -eq 131072) {
+        $expected = $strata.service -eq 'strata' -and $strata.model -eq 'qwen3.8-flash-next-iq3_s' -and $strata.max_context -eq 131072
+        $standby = $false
+        if ($expected -and -not $strata.loaded) {
+            $metrics = Get-Health 'http://127.0.0.1:8080/metrics'
+            $standby = $metrics.live.state -eq 'unloaded' -and $metrics.live.queued -eq 0
+        }
+        if ($expected -and $strata.loaded) {
             $state = 'READY: cloud gateway, loopback bridge, IQ3_S 128K.'
+        } elseif ($standby) {
+            $state = 'READY: IQ3_S 128K server in standby; the next request reloads the model automatically.'
         } else {
             $state = "WAIT: Strata reports loaded=$($strata.loaded), model=$($strata.model), context=$($strata.max_context). Existing runtime left running."
+            if ($Once) { throw $state }
         }
         if ($state -ne $previousState) { Write-State $state; $previousState = $state }
     } catch {
@@ -38,5 +48,6 @@ do {
         if ($state -ne $previousState) { Write-State $state; $previousState = $state }
         if ($Once) { throw }
     }
-    if (-not $Once) { Start-Sleep -Seconds 30 }
+    if ($Once) { Write-Host $state; Stop-Transcript | Out-Null }
+    else { Start-Sleep -Seconds 30 }
 } while (-not $Once)

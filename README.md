@@ -30,7 +30,13 @@ npm run download:strata -- -EnableStartup
 npm run setup:strata
 # Start installed services automatically at Windows user login, without the shortcut.
 npm run startup:strata
+# Manually start/recover installed services; no downloads or Codex restart.
+npm run start:strata
+# Restart only the local Strata model, keeping the cloud gateway and bridge alive.
+npm run restart:strata
 ```
+
+An idle-unloaded Strata server is ready in standby: Strata reloads the model on the next request, and the login supervisor does not repeatedly restart it.
 
 Automatic startup uses a limited, current-user scheduled task. It starts the cloud
 gateway and bridge before loading the saved local model, then recovers stopped
@@ -38,6 +44,12 @@ services every 30 seconds. Initial model loading still takes time. It does not
 restart Codex, download weights, refresh catalogs, or replace another running
 Strata preset. Logs: `%LOCALAPPDATA%\OllamaForge\startup.log`.
 Disable it with `npm run startup:strata:disable`.
+Manual restart checks installed model files and request state, and refuses to
+interrupt active local work by default. To interrupt a stuck local request,
+explicitly run `npm run restart:strata -- -Force`. The repo's running startup
+supervisor is paused during restart and resumed on completion or failure;
+previously disabled startup stays disabled. Login and restart recovery share
+path discovery and old-runtime-record repair for ordinary and Store installs.
 Strata-only PCs do not need a second model installed in Ollama. Ollama itself is
 still required for the cloud gateway. A normal `npm run setup` on smaller/other-GPU
 PCs connects their existing Ollama models; it never installs this large preset.

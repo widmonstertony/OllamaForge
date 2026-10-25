@@ -27,6 +27,10 @@ npm run download:strata -- -EnableStartup
 npm run setup:strata
 # 登录 Windows 后自动启动已有模型和连接服务，不再需要桌面快捷方式。
 npm run startup:strata
+# 手动启动/恢复已有模型和连接，不下载、不重启 Codex。
+npm run start:strata
+# 仅重启本地 Strata 模型，保留云端网关和桥接。
+npm run restart:strata
 ```
 
 重新打开 Codex 后，在模型列表选择 **Strata · Qwen3.8 Flash 128K (IQ3_S)**。
@@ -41,6 +45,11 @@ npm run startup:strata
 不重新下载、不覆盖模型目录，也不会替换正在运行的其他 Strata 预设。
 日志：`%LOCALAPPDATA%\OllamaForge\startup.log`。
 关闭自动启动：`npm run startup:strata:disable`。
+手动重启前会检查模型文件与请求状态，默认拒绝中断正在处理的本地任务。
+需要中断卡住的本地请求时，显式执行 `npm run restart:strata -- -Force`。
+重启期间暂挂本仓库的自动恢复任务，完成或出错后恢复；不会启用原本关闭的自启。
+开机和重启恢复使用同一套路径发现与旧运行记录修复，适用于普通安装和 Codex Store 安装。
+Strata 空闲释放模型内存时会报告待机，下一次请求由 Strata 自动加载，不会被自启反复重启。
 纯 Strata 安装不需要在 Ollama 中再下载第二个模型；Ollama 程序仍用于云端网关。
 小内存或其他 GPU 的电脑使用普通 `npm run setup`，连接其已有的 Ollama 模型，
 不会安装这个大预设。自定义 Strata 安装可设置 `STRATA_TERMINAL_PATH` 指向启动器。

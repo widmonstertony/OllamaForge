@@ -26,6 +26,7 @@
 !Strata-WindowsRuntime.ps1
 !Run-StrataBridge.ps1
 !Start-StrataBackground.ps1
+!Restart-Strata.ps1
 !Install-StrataStartup.ps1
 !Repair-StrataRuntimeAlias.ps1
 !test-strata-startup.ps1

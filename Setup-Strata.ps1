@@ -14,23 +14,6 @@ $stateDir = Join-Path $env:LOCALAPPDATA 'OllamaForge'
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
 
 . (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1')
-function Resolve-Strata {
-    if ($env:STRATA_TERMINAL_PATH) {
-        if (-not (Test-Path -LiteralPath $env:STRATA_TERMINAL_PATH)) { throw 'STRATA_TERMINAL_PATH does not exist.' }
-        return $env:STRATA_TERMINAL_PATH
-    }
-    $terminals = @(
-        (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\Strata\terminal'),
-        (Join-Path $env:LOCALAPPDATA 'Strata\terminal')
-    )
-    # Prefer the real version directory: MSIX filesystem virtualization can make
-    # the upstream current junction readable but not executable from Codex.
-    $found = Get-StrataTerminalPath -Roots $terminals
-    if ($found) { return $found }
-    $command = Get-Command strata -ErrorAction SilentlyContinue
-    if ($command) { return $command.Source }
-    return $null
-}
 function Test-Strata {
     try { $h = Invoke-RestMethod 'http://127.0.0.1:8080/health' -TimeoutSec 3; return ($h.service -eq 'strata' -and $h.loaded -and $h.max_context -eq 131072 -and $h.model -eq 'qwen3.8-flash-next-iq3_s') }
     catch { return $false }
@@ -40,33 +23,13 @@ $hardware = if ($Install -or $CheckHardware) { Read-StrataHardwareProfile } else
 if ($CheckHardware) { $hardware | ConvertTo-Json; return }
 $ollama = Resolve-OllamaForgeOllama
 Start-OllamaForgeGateway -Ollama $ollama -StateDirectory $stateDir
-$strata = Resolve-Strata
-# Strata installed from a Store-packaged Codex can live in its physical LocalCache.
-# Explicit supported Strata paths let ordinary desktop PowerShell use that same
-# installation, preset, components and owner state without re-downloading it.
-$packageCache = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache'
-$profileCache = Join-Path $packageCache 'Roaming\Strata\profiles'
-$presetCache = Join-Path $packageCache 'Roaming\Strata\launch-presets'
-if ($strata -and $strata.StartsWith($packageCache, [StringComparison]::OrdinalIgnoreCase) -and
-    -not $env:STRATA_PROFILE_DIR -and (Test-Path -LiteralPath (Join-Path $presetCache 'codex-iq3_s-128k.json'))) {
-    $env:STRATA_PROFILE_DIR = $profileCache
-    $env:STRATA_LAUNCH_PRESET_DIR = $presetCache
-}
-foreach ($pair in @(@('STRATA_COMPONENTS_DIR','Local\Strata\components'), @('STRATA_RUNTIME_DIR','Local\Strata\runtime'))) {
-    $candidate = Join-Path $packageCache $pair[1]
-    if ($strata -and $strata.StartsWith($packageCache, [StringComparison]::OrdinalIgnoreCase) -and
-        -not [Environment]::GetEnvironmentVariable($pair[0]) -and (Test-Path -LiteralPath $candidate)) {
-        [Environment]::SetEnvironmentVariable($pair[0], $candidate, 'Process')
-    }
-}
-. (Join-Path $PSScriptRoot 'Repair-StrataRuntimeAlias.ps1')
-if (-not $InfrastructureOnly) { Repair-StrataRuntimeAlias $packageCache }
+$strata = Initialize-OllamaForgeStrata -SkipRuntimeRepair:$InfrastructureOnly
 if (-not $strata -and $Install) {
     $installer = Join-Path $stateDir 'install-strata-terminal.ps1'
     Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/Niko1221/Strata/releases/latest/download/install.ps1' -OutFile $installer
     # Upstream verifies the Terminal archive SHA-256 and the signed release feed.
     & $installer
-    $strata = Resolve-Strata
+    $strata = Initialize-OllamaForgeStrata
 }
 if ($Install) {
     if (-not $strata) { throw 'Strata Terminal was not installed.' }
@@ -80,10 +43,7 @@ if ($Install) {
     $planText = (& $strata launch --preset 'Codex IQ3_S 128K' --plan --no-tui --output json | Out-String)
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the saved Strata preset before startup.' }
     $plan = $planText | ConvertFrom-Json
-    if (-not $plan.ok -or $null -eq $plan.plan.download -or $plan.plan.download.gb -gt 0 -or
-        @($plan.plan.download.parts).Count -gt 0 -or $plan.plan.download.engine_missing -or -not $plan.plan.download.engine_usable) {
-        throw 'Saved Strata runtime has missing components or model files. Automatic startup never downloads; run npm run download:strata explicitly.'
-    }
+    Assert-OllamaForgeStrataPlanReady $plan
     & $strata launch --preset 'Codex IQ3_S 128K' --yes --no-tui
     if ($LASTEXITCODE -ne 0) { throw "Strata startup failed: $LASTEXITCODE" }
 }
