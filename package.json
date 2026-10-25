@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-bridge.mjs",
+    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-context-policy.mjs && node test-strata-bridge.mjs",
     "setup": "node connect.mjs",
     "connect": "node connect.mjs",
     "setup:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Strata.ps1",
@@ -14,7 +14,8 @@
     "startup:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Install-StrataStartup.ps1",
     "startup:strata:disable": "powershell -NoProfile -ExecutionPolicy Bypass -File Install-StrataStartup.ps1 -Disable",
     "download:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Strata.ps1 -Install",
-    "test:strata": "node test-strata-bridge.mjs",
+    "test:strata": "node test-strata-context-policy.mjs && node test-strata-bridge.mjs",
+    "test:strata-policy": "node test-strata-context-policy.mjs",
     "test:strata-startup": "powershell -NoProfile -ExecutionPolicy Bypass -File test-strata-startup.ps1",
     "test:strata-context": "node test-strata-context.mjs",
     "models": "node connect.mjs --list",

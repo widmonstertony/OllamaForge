@@ -54,6 +54,22 @@ explicitly run `npm run restart:strata -- -Force`. The repo's running startup
 supervisor is paused during restart and resumed on completion or failure;
 previously disabled startup stays disabled. Login and restart recovery share
 path discovery and old-runtime-record repair for ordinary and Store installs.
+
+The local context profile preserves every GitHub, Chrome/browser, computer-use
+and core coding function. Optional Pages, Sites, pets and document-canvas schemas
+are excluded from Strata requests; plugins remain installed and cloud requests
+retain their original tools. Shared namespace documentation is carried once,
+with function descriptions, parameter schemas and usage constraints intact.
+Tool results over about 16,000 characters keep their beginning/end with an
+explicit omission marker. Images, continuation IDs, user messages and call
+arguments are preserved; read omitted content by field or bounded line range.
+Thinking levels such as `high` remain selected, with a default 4,096-token local
+thinking budget; explicit request budgets take precedence. Compaction summaries
+are capped at 4,096 output tokens. The compaction threshold stays 110,000 and the
+runtime stays 128K. Long tasks still compact normally; this avoids premature
+compaction caused by the fixed tool catalog. Inspect size-only diagnostics at
+`http://127.0.0.1:11436/context` and run `npm run test:strata-policy`.
+`npm run setup:strata` or login recovery upgrades an older bridge automatically.
 Strata-only PCs do not need a second model installed in Ollama. Ollama itself is
 still required for the cloud gateway. A normal `npm run setup` on smaller/other-GPU
 PCs connects their existing Ollama models; it never installs this large preset.

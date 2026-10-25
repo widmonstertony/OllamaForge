@@ -20,6 +20,8 @@
 !deploy.mjs
 !connect.mjs
 !strata-codex-bridge.mjs
+!strata-context.mjs
+!test-strata-context-policy.mjs
 !strata-config.mjs
 !strata-setup.mjs
 !Setup-Strata.ps1

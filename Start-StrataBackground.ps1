@@ -18,7 +18,7 @@ do {
     try {
         $ollama = Get-Health 'http://127.0.0.1:11434/api/version'
         $bridge = Get-Health 'http://127.0.0.1:11436/health'
-        if (-not $ollama.version -or $bridge.service -ne 'ollamaforge-strata-bridge') {
+        if (-not $ollama.version -or $bridge.service -ne 'ollamaforge-strata-bridge' -or $bridge.contextPolicy -ne 'desktop-v1') {
             & (Join-Path $PSScriptRoot 'Setup-Strata.ps1') -InfrastructureOnly
         }
         $strata = Get-Health 'http://127.0.0.1:8080/health'

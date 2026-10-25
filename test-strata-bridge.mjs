@@ -11,10 +11,11 @@ import { adoptOllamaIntegration, connect } from './connect.mjs';
 
 const seen = [];
 let reportedModel = STRATA_MODEL;
+let reportedLoaded = true;
 const mock = (route) => http.createServer(async (req, res) => {
   if (req.url === '/health') {
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ loaded: true, model: reportedModel, max_context: 131072 }));
+    res.end(JSON.stringify({ loaded: reportedLoaded, model: reportedModel, max_context: 131072 }));
     return;
   }
   const chunks = [];
@@ -49,7 +50,7 @@ try {
   assert.deepEqual(JSON.parse(seen[0].body).tools, payload.tools);
   assert.equal(JSON.parse(seen[0].body).store, false);
 
-  const cloudBody = Buffer.from(JSON.stringify({ model: 'gpt-new-from-native-catalog', input: 'ping' }));
+  const cloudBody = Buffer.from(JSON.stringify({ model: 'gpt-new-from-native-catalog', reasoning: { effort: 'high' }, tools: [{ type: 'namespace', name: 'mcp__codex_apps__sites', tools: [{ type: 'function', name: 'get_site' }] }], input: [{ type: 'function_call_output', call_id: 'cloud_test', output: 'cloud output '.repeat(4000) }] }));
   const cloudResponse = await fetch(`${base}/api/codex/v1/responses?client_version=1`, { method: 'POST', headers: { authorization: 'Bearer cloud-token', 'chatgpt-account-id': 'cloud-account', 'content-type': 'application/json' }, body: cloudBody });
   assert.equal((await cloudResponse.json()).route, 'gateway');
   assert.equal(seen[1].headers.authorization, 'Bearer cloud-token');
@@ -64,6 +65,25 @@ try {
   assert.equal(mismatch.status, 409);
   assert.equal(seen.length, before, 'Never silently serve Q2 when the user selected Q3.');
   reportedModel = STRATA_MODEL;
+
+  const namespace = (name) => ({ type: 'namespace', name, description: 'Shared tool rules.', tools: [{ type: 'function', name: 'read', parameters: { type: 'object', properties: { id: { type: 'string' } } } }, { type: 'function', name: 'list', parameters: { type: 'object' } }] });
+  const optimizedRequest = { model: STRATA_MODEL, reasoning: { effort: 'high' }, tools: [namespace('mcp__node_repl'), namespace('mcp__cua_repl'), namespace('mcp__codex_apps__github'), namespace('mcp__codex_apps__sites')], input: [{ type: 'function_call_output', call_id: 'test', output: 'private-result-text '.repeat(3000) }] };
+  const optimizedResponse = await fetch(`${base}/api/codex/v1/responses`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(optimizedRequest) });
+  assert.equal(optimizedResponse.status, 200);
+  await optimizedResponse.json();
+  const forwarded = JSON.parse(seen.at(-1).body);
+  assert.deepEqual(forwarded.tools.map(t => t.name), ['mcp__node_repl', 'mcp__cua_repl', 'mcp__codex_apps__github']);
+  for (const tool of forwarded.tools) assert.deepEqual(tool.tools, optimizedRequest.tools.find(t => t.name === tool.name).tools);
+  assert.equal(forwarded.reasoning_budget_tokens, 4096);
+  assert.ok(forwarded.input[0].output.length <= 16000);
+  const diagnostics = await fetch(`${base}/context`).then(r => r.json());
+  assert.ok(diagnostics.lastContext.after.toolCharacters < diagnostics.lastContext.before.toolCharacters);
+  assert.ok(!JSON.stringify(diagnostics).includes('private-result-text'));
+  reportedLoaded = false;
+  const standby = await fetch(`${base}/api/codex/v1/responses`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  assert.equal(standby.status, 200, 'An idle-unloaded matching Strata server must be allowed to reload on request.');
+  await standby.json();
+  reportedLoaded = true;
 
   const catalogPath = path.join(work, 'models.json');
   const configPath = path.join(work, 'config.toml');

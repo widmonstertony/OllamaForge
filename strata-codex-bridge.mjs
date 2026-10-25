@@ -2,6 +2,7 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { describeContext, optimizeContext } from './strata-context.mjs';
 
 export const STRATA_MODEL = 'qwen3.8-flash-next-iq3_s';
 export const BRIDGE_BASE = 'http://127.0.0.1:11436/api/codex/v1';
@@ -20,6 +21,7 @@ function decode(body, encoding) {
 // Only the exact Strata model goes to Strata. Everything else retains Ollama's
 // existing cloud/local routing. Never send the user's cloud credentials to Strata.
 export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080', ollamaBase = 'http://127.0.0.1:11434' } = {}) {
+  let lastContext = null;
   for (const base of [strataBase, ollamaBase]) {
     const url = new URL(base);
     if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Upstreams must be loopback HTTP.');
@@ -29,7 +31,8 @@ export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080'
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(value));
     };
-    if (req.url === '/health') return json(200, { status: 'ok', service: 'ollamaforge-strata-bridge', model: STRATA_MODEL });
+    if (req.url === '/health') return json(200, { status: 'ok', service: 'ollamaforge-strata-bridge', model: STRATA_MODEL, contextPolicy: 'desktop-v1' });
+    if (req.url === '/context' && req.method === 'GET') return json(200, { model: STRATA_MODEL, lastContext });
     if (!req.url?.startsWith('/api/codex/v1/')) return json(404, { error: { message: 'Unknown bridge endpoint.' } });
     try {
       const chunks = [];
@@ -41,9 +44,12 @@ export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080'
       }
       const raw = Buffer.concat(chunks);
       const decoded = raw.length ? decode(raw, req.headers['content-encoding']) : raw;
-      const parsed = decoded.length ? JSON.parse(decoded) : null;
+      let parsed = decoded.length ? JSON.parse(decoded) : null;
       const local = parsed?.model === STRATA_MODEL;
       if (local) {
+        const before = describeContext(parsed);
+        if (process.env.OLLAMAFORGE_STRATA_CONTEXT !== 'off') parsed = optimizeContext(parsed);
+        lastContext = { at: new Date().toISOString(), before, after: describeContext(parsed), reasoningBudget: parsed.reasoning_budget_tokens ?? null };
         let health;
         try {
           const response = await fetch(`${strataBase}/health`, { signal: AbortSignal.timeout(5000) });
@@ -51,7 +57,7 @@ export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080'
         } catch {
           return json(503, { error: { message: 'Strata is not ready. Start the Codex IQ3_S 128K preset.', type: 'bridge_error' } });
         }
-        if (!health.loaded || health.model !== STRATA_MODEL || health.max_context !== 131072) {
+        if (health.model !== STRATA_MODEL || health.max_context !== 131072) {
           return json(409, { error: { message: `Expected ${STRATA_MODEL} at 128K; the loaded runtime reports ${health.model ?? 'no model'} at ${health.max_context ?? 0}. Start the matching preset.`, type: 'model_mismatch' } });
         }
       }
@@ -64,8 +70,8 @@ export function startBridge({ port = 11436, strataBase = 'http://127.0.0.1:8080'
         for (const key of Object.keys(headers)) {
           if (!['content-type', 'accept', 'user-agent'].includes(key)) delete headers[key];
         }
-        // Strata's Responses implementation is stateless and already understands
-        // namespace/custom tools; preserve those tools and the full input history.
+        // Keep all user/assistant messages and tool arguments. The local context
+        // profile bounds tool results and optional app schemas; cloud is byte-exact.
         parsed.store = false;
         body = Buffer.from(JSON.stringify(parsed));
         headers['content-type'] = 'application/json';
