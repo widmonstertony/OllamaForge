@@ -14,10 +14,8 @@ Assert-OllamaForgeStrataRestart -Health $health -Metrics $metrics -Force:$Force
 
 $taskName = 'OllamaForgeStrataStartup'
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $runner = Join-Path $PSScriptRoot 'Start-StrataBackground.ps1'
-$arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"'
-if ($task -and -not ($task.Actions | Where-Object { $_.Execute -eq $powershell -and $_.Arguments -eq $arguments })) {
+if ($task -and -not (Test-OllamaForgeBackgroundTask $task $runner)) {
     throw 'The startup task belongs to another checkout. Refusing to control it.'
 }
 $resume = $task -and $task.State -eq 'Running' -and $task.Settings.Enabled

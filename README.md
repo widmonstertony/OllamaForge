@@ -44,6 +44,10 @@ services every 30 seconds. Initial model loading still takes time. It does not
 restart Codex, download weights, refresh catalogs, or replace another running
 Strata preset. Logs: `%LOCALAPPDATA%\OllamaForge\startup.log`.
 Disable it with `npm run startup:strata:disable`.
+Background tasks use a locally compiled Windows GUI host with no console, so
+PowerShell and Windows Terminal windows do not open. Run `npm run startup:strata`
+once after updating an older installation to migrate its tasks; future logins
+need no shortcut or command.
 Manual restart checks installed model files and request state, and refuses to
 interrupt active local work by default. To interrupt a stuck local request,
 explicitly run `npm run restart:strata -- -Force`. The repo's running startup

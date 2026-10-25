@@ -3,10 +3,61 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1')
 $originalRuntime = $env:STRATA_RUNTIME_DIR
 $originalFixture = $env:OLLAMAFORGE_RESTART_FIXTURE
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('ollamaforge-runtime-alias-' + [guid]::NewGuid().ToString('N'))
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('of-runtime-' + [guid]::NewGuid().ToString('N').Substring(0,16))
 $physical = Join-Path $testRoot 'Local\Strata\runtime'
 New-Item -ItemType Directory -Path $physical -Force | Out-Null
 try {
+    $hostFixture = Join-Path $testRoot ('Host with spaces '+[char]0x7528+[char]0x6237)
+    New-Item -ItemType Directory -Path $hostFixture | Out-Null
+    $probeSource = 'using System; using System.Runtime.InteropServices; public static class ConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'
+    Set-Content (Join-Path $hostFixture 'probe.cs') $probeSource -Encoding UTF8
+    @'
+Add-Type -Path (Join-Path $PSScriptRoot 'probe.cs')
+[ConsoleProbe]::GetConsoleWindow().ToInt64() | Set-Content (Join-Path $PSScriptRoot 'native-console.txt')
+'@ | Set-Content (Join-Path $hostFixture 'native.ps1') -Encoding UTF8
+    @'
+Add-Type -Path (Join-Path $PSScriptRoot 'probe.cs')
+[ConsoleProbe]::GetConsoleWindow().ToInt64() | Set-Content (Join-Path $PSScriptRoot 'host-console.txt')
+& (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'native.ps1')
+Write-Output 'HOST_STDOUT'
+Write-Error 'HOST_STDERR' -ErrorAction Continue
+exit 23
+'@ | Set-Content (Join-Path $hostFixture 'probe.ps1') -Encoding UTF8
+    $probeRunner = Join-Path $hostFixture 'probe.ps1'
+    $hostAction = Get-OllamaForgeBackgroundAction $probeRunner -StateDirectory $hostFixture
+    $bytes = [IO.File]::ReadAllBytes($hostAction.Execute)
+    $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+    if ([BitConverter]::ToUInt16($bytes, $pe + 24 + 68) -ne 2) { throw 'Background host must be a Windows GUI executable.' }
+    $hostRun = Start-Process -FilePath $hostAction.Execute -ArgumentList $hostAction.Arguments -Wait -PassThru
+    if ($hostRun.ExitCode -ne 23) { throw 'Background host must propagate PowerShell failures.' }
+    foreach ($result in @('host-console.txt','native-console.txt')) {
+        if ((Get-Content (Join-Path $hostFixture $result) -Raw).Trim() -ne '0') { throw "A console was allocated: $result" }
+    }
+    if ((Get-Content (Join-Path $hostFixture 'probe.host.stdout.log') -Raw) -notmatch 'HOST_STDOUT' -or
+        (Get-Content (Join-Path $hostFixture 'probe.host.stderr.log') -Raw) -notmatch 'HOST_STDERR') { throw 'Background output must be logged.' }
+    $ownTask = [pscustomobject]@{Actions=@($hostAction)}
+    if (-not (Test-OllamaForgeBackgroundTask $ownTask $probeRunner $hostAction)) { throw 'Background task ownership was lost.' }
+    if (Test-OllamaForgeBackgroundTask $ownTask ($probeRunner + '.other') $hostAction) { throw 'Another checkout must be refused.' }
+    Write-Host 'PASS: GUI host, no console in PowerShell/native child, Unicode paths, output logs, exit code and task ownership.'
+    @'
+$PID | Set-Content (Join-Path $PSScriptRoot 'waiting-pid.txt')
+Start-Sleep -Seconds 60
+'@ | Set-Content (Join-Path $hostFixture 'waiting.ps1') -Encoding UTF8
+    $waitingHost=$null; $waitingChild=$null
+    try {
+        $waitingScript = Join-Path $hostFixture 'waiting.ps1'
+        $waitingHost = Start-Process -FilePath $hostAction.Execute -ArgumentList ('"'+$waitingScript+'"') -PassThru
+        $deadline = (Get-Date).AddSeconds(15)
+        $pidFile = Join-Path $hostFixture 'waiting-pid.txt'
+        while (-not (Test-Path -LiteralPath $pidFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+        $waitingChild = Get-Process -Id ([int](Get-Content $pidFile -Raw)) -ErrorAction Stop
+        $waitingHost.Kill()
+        if (-not $waitingChild.WaitForExit(5000)) { throw 'Stopping the GUI host left its supervisor running.' }
+    } finally {
+        if ($waitingHost -and -not $waitingHost.HasExited) { $waitingHost.Kill() }
+        if ($waitingChild -and -not $waitingChild.HasExited) { $waitingChild.Kill() }
+    }
+    Write-Host 'PASS: stopping the GUI host also stops its supervisor.'
     $readyPlan = [pscustomobject]@{ok=$true;plan=[pscustomobject]@{download=[pscustomobject]@{gb=0;parts=@();engine_missing=$false;engine_usable=$true}}}
     Assert-OllamaForgeStrataPlanReady $readyPlan
     $readyPlan.plan.download.gb = 1
@@ -146,6 +197,6 @@ if ($RuntimeOnly) {
     $resolved = [IO.Path]::GetFullPath($testRoot)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
     if (-not $resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
-        [IO.Path]::GetFileName($resolved) -notlike 'ollamaforge-runtime-alias-*') { throw 'Unexpected fixture cleanup path.' }
+        [IO.Path]::GetFileName($resolved) -notlike 'of-runtime-*') { throw 'Unexpected fixture cleanup path.' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }

@@ -59,20 +59,21 @@ try { $h = Invoke-RestMethod 'http://127.0.0.1:11436/health' -TimeoutSec 2; $bri
 $bridge = Join-Path $PSScriptRoot 'strata-codex-bridge.mjs'
 $taskName = 'OllamaForgeStrataBridge'
 $runner = Join-Path $PSScriptRoot 'Run-StrataBridge.ps1'
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$taskArguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"'
+$background = Get-OllamaForgeBackgroundAction $runner -StateDirectory $stateDir
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-$legacyTask = $task -and ($task.Actions | Where-Object { $_.Arguments -eq ('"' + $bridge + '"') -and $_.Execute -eq $node })
-if ($task -and -not $legacyTask -and -not ($task.Actions | Where-Object { $_.Arguments -eq $taskArguments -and $_.Execute -eq $powershell })) {
+$legacyNode = $task -and ($task.Actions | Where-Object { $_.Arguments -eq ('"' + $bridge + '"') -and $_.Execute -eq $node })
+$ownedTask = Test-OllamaForgeBackgroundTask $task $runner $background
+if ($task -and -not $legacyNode -and -not $ownedTask) {
     throw "Scheduled task $taskName belongs to another checkout/runtime. Refusing to overwrite it."
 }
-if (-not $task -or $legacyTask) {
+$upgradeTask = $task -and -not ($task.Actions | Where-Object { $_.Execute -eq $background.Execute -and $_.Arguments -eq $background.Arguments })
+if (-not $task -or $upgradeTask) {
     # A scheduler-owned process survives closing/reopening the Codex application.
-    $action = New-ScheduledTaskAction -Execute $powershell -Argument $taskArguments -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute $background.Execute -Argument $background.Arguments -WorkingDirectory $PSScriptRoot
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-    if ($legacyTask) {
+    if ($upgradeTask) {
         Stop-ScheduledTask -TaskName $taskName
         $task = Set-ScheduledTask -TaskName $taskName -Action $action -Settings $settings
         $bridgeReady = $false

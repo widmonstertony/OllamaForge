@@ -24,6 +24,7 @@
 !strata-setup.mjs
 !Setup-Strata.ps1
 !Strata-WindowsRuntime.ps1
+!Strata-BackgroundHost.cs
 !Run-StrataBridge.ps1
 !Start-StrataBackground.ps1
 !Restart-Strata.ps1

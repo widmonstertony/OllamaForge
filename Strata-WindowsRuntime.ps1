@@ -1,3 +1,47 @@
+function Get-OllamaForgeBackgroundAction([string]$Runner, [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'OllamaForge')) {
+    $source = Join-Path $PSScriptRoot 'Strata-BackgroundHost.cs'
+    $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    $directory = Join-Path $StateDirectory ('background-host\' + $hash.Substring(0,16))
+    $executable = Join-Path $directory 'OllamaForge.BackgroundHost.exe'
+    if (-not (Test-Path -LiteralPath $executable)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        # Windows PowerShell 5.1 compiles with the installed .NET Framework;
+        # no download, administrator access, or prebuilt repository binary.
+        $mutex = New-Object Threading.Mutex($false, ('Local\OllamaForgeBackground-' + $hash))
+        $locked = $false
+        $temporary = Join-Path $directory ([guid]::NewGuid().ToString('N').Substring(0,12) + '.exe')
+        try {
+            $locked = $mutex.WaitOne(30000)
+            if (-not $locked) { throw 'Timed out building the background host.' }
+            if (-not (Test-Path -LiteralPath $executable)) {
+                Add-Type -TypeDefinition (Get-Content -LiteralPath $source -Raw) -OutputAssembly $temporary -OutputType WindowsApplication
+                Move-Item -LiteralPath $temporary -Destination $executable
+            }
+        } finally {
+            if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+            if ($locked) { $mutex.ReleaseMutex() }
+            $mutex.Dispose()
+        }
+    }
+    return [pscustomobject]@{Execute=$executable;Arguments=('"' + $Runner + '"')}
+}
+
+function Test-OllamaForgeBackgroundTask($Task, [string]$Runner, $Action) {
+    if (-not $Task) { return $false }
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $legacyArguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $Runner + '"'
+    # Accept only this checkout's exact script path, including on host upgrades.
+    $hostRoot = (Join-Path $env:LOCALAPPDATA 'OllamaForge\background-host').TrimEnd('\') + '\'
+    foreach ($entry in $Task.Actions) {
+        if ($entry.Execute -eq $powershell -and $entry.Arguments -eq $legacyArguments) { return $true }
+        if ($entry.Arguments -eq ('"' + $Runner + '"') -and
+            (($Action -and $entry.Execute -eq $Action.Execute) -or
+             ($entry.Execute.StartsWith($hostRoot, [StringComparison]::OrdinalIgnoreCase) -and
+              [IO.Path]::GetFileName($entry.Execute) -eq 'OllamaForge.BackgroundHost.exe'))) { return $true }
+    }
+    return $false
+}
+
 function Test-OllamaForgeNodeVersion([version]$Version) {
     return (($Version -ge [version]'24.22.1' -and $Version.Major -eq 24) -or
         ($Version -ge [version]'26.12.1' -and $Version.Major -eq 26))

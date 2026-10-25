@@ -45,6 +45,8 @@ npm run restart:strata
 不重新下载、不覆盖模型目录，也不会替换正在运行的其他 Strata 预设。
 日志：`%LOCALAPPDATA%\OllamaForge\startup.log`。
 关闭自动启动：`npm run startup:strata:disable`。
+后台任务通过本机编译的无控制台 Windows 启动器运行，不会打开 PowerShell 或 Windows Terminal 窗口。
+更新已有安装时，执行一次 `npm run startup:strata` 会迁移旧后台任务；以后登录即自动恢复，无需快捷方式或命令。
 手动重启前会检查模型文件与请求状态，默认拒绝中断正在处理的本地任务。
 需要中断卡住的本地请求时，显式执行 `npm run restart:strata -- -Force`。
 重启期间暂挂本仓库的自动恢复任务，完成或出错后恢复；不会启用原本关闭的自启。
