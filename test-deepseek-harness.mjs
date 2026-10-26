@@ -4,12 +4,18 @@ import { projectNativeResult } from './deepseek-native-provider.mjs';
 
 assert.equal(parseHarnessArgs(['launch', '--port', '3081', '--no-open']).port, 3081);
 assert.equal(parseHarnessArgs(['launch', '--no-open']).noOpen, true);
+assert.equal(parseHarnessArgs(['launch', '--workspace', 'project with spaces']).workspace, 'project with spaces');
+assert.equal(parseHarnessArgs(['repair-workspace', '--apply']).apply, true);
+assert.throws(() => parseHarnessArgs(['launch', '--apply']));
 for (const args of [['launch', '--port', 'abc'], ['connect', '--model'], ['connect', '--context', 'x'], ['connect', '--api', 'bad'], ['bad']]) assert.throws(() => parseHarnessArgs(args));
 for (const url of ['https://example.com/v1', 'http://127.0.0.1.evil.test/v1', 'http://user:secret@localhost/v1', 'http://localhost/v1?token=secret']) assert.throws(() => validateLocalURL(url));
 assert.equal(validateLocalURL('http://127.0.0.1:8080/v1/'), 'http://127.0.0.1:8080/v1');
 const strata = await discoverConnection({}, async () => ({ service: 'strata', model: 'installed-iq3', max_context: 131072 }));
 assert.equal(strata.contextWindow, 131072);
 const patch = buildHarnessPatch(strata);
+assert.equal(patch[3].config.modelPolicies[0].maxTokens, 2048);
+assert.equal(patch[3].config.modelPolicies[0].headroomTokens, 8192);
+assert.equal(patch[3].config.modelPolicies[0].provider, 'ollamaforge-local');
 assert.equal(patch[2].insert.length, 4);
 assert.equal(patch[2].insert[3].config.mode, 'launch');
 assert.equal(patch[2].insert[3].config.headless, false);

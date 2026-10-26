@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync, execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { localCompactionPolicy, rewriteCompactionTree } from './deepseek-compaction.mjs';
 
 export const DSH_VERSION = '0.2.1-rc.2';
 export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-computer-use', '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native', '@deepseek-ai/dsh-browser-use', '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp'];
@@ -17,11 +19,12 @@ const WEB_LOG = path.join(RUNTIME, 'web.stdout.log');
 
 export function parseHarnessArgs(args) {
   const options = { command: args[0] ?? 'connect', port: 3080 };
-  if (!['connect', 'launch', 'serve', 'test', 'stop'].includes(options.command)) throw new Error('Use connect, launch, test or stop.');
+  if (!['connect', 'launch', 'serve', 'test', 'stop', 'repair-workspace'].includes(options.command)) throw new Error('Use connect, launch, test, stop or repair-workspace.');
   for (let i = 1; i < args.length; i++) {
     const key = args[i];
     if (key === '--no-open') { options.noOpen = true; continue; }
-    if (!['--base-url', '--model', '--context', '--api', '--port'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
+    if (key === '--apply' && options.command === 'repair-workspace') { options.apply = true; continue; }
+    if (!['--base-url', '--model', '--context', '--api', '--port', '--workspace'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
     options[key.slice(2)] = args[++i];
   }
   options.port = Number(options.port);
@@ -38,6 +41,17 @@ export function validateLocalURL(value) {
     throw new Error('Use an HTTP loopback model endpoint without credentials, query or fragment.');
   }
   return url.href.replace(/\/$/, '');
+}
+
+export function resolveProjectWorkspace(value, runtime = RUNTIME) {
+  const directory = fs.realpathSync(value);
+  if (!fs.statSync(directory).isDirectory()) throw new Error('Workspace must be an existing directory.');
+  const reserved = fs.existsSync(runtime) ? fs.realpathSync(runtime) : path.resolve(runtime);
+  const normalize = value => process.platform === 'win32' ? value.toLowerCase() : value;
+  if (normalize(directory) === normalize(reserved) || normalize(directory).startsWith(normalize(reserved + path.sep))) {
+    throw new Error('Select a real project outside the Harness runtime/test directory.');
+  }
+  return directory;
 }
 
 async function json(url) {
@@ -70,6 +84,7 @@ export function buildHarnessPatch(connection) {
   return [
     { id: 'llm-pi-ai', config: { providers: { 'ollamaforge-local': {
       displayName: 'OllamaForge Local', apiKeyEnv: LOCAL_KEY, api: connection.api,
+      ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoning: 'off' } : {}),
       baseURL: connection.baseURL, streamIdleTimeoutMs: 600000,
       retryPolicy: { mode: 'normal', maxRetries: 1 },
       models: [{ id: connection.model, name: `${connection.model} (local)`, contextWindow: connection.contextWindow,
@@ -84,6 +99,9 @@ export function buildHarnessPatch(connection) {
       { id: 'ollamaforge-browser-use', name: '@deepseek-ai/dsh-browser-use' },
       { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
     ] },
+    { id: 'compaction-basic', name: pathToFileURL(path.join(ROOT, 'deepseek-compaction.mjs')).href, config: {
+      modelPolicies: [{ provider: 'ollamaforge-local', model: connection.model, ...localCompactionPolicy(connection.contextWindow) }],
+    } },
   ];
 }
 
@@ -109,30 +127,59 @@ function ensureInstalled() {
 function environment() { return { ...process.env, DSH_HOME: HOME, [LOCAL_KEY]: 'local-endpoint-no-auth' }; }
 function args(profile, extra = []) { return [BIN, profile, '--patch', PATCH, '--patch', path.join(RUNTIME, `${profile}-guard.patch.yml`), ...extra]; }
 function windowsBackground(action = []) {
+  return windowsScript('Start-DeepSeekHarness.ps1', action);
+}
+function windowsScript(script, action = []) {
   const env = { ...process.env };
   // A PowerShell 7 parent can otherwise hide Windows PowerShell 5.1 modules.
   delete env.PSModulePath;
   return run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'Start-DeepSeekHarness.ps1'), ...action], { env });
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, script), ...action], { env, stdio: 'inherit' });
 }
 
 export async function connectHarness(options) {
   const connection = await discoverConnection(options);
   ensureInstalled();
   fs.mkdirSync(HOME, { recursive: true });
+  const previous = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
+  const workspace = resolveProjectWorkspace(options.workspace ?? previous.workspace ?? ROOT);
   // JSON is valid YAML; no shared ~/.dsh profile, credential or Codex config is edited.
   const patch = JSON.stringify(buildHarnessPatch(connection), null, 2) + '\n';
   const sourceHash = createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url)))
-    .update(fs.readFileSync(path.join(ROOT, 'deepseek-native-provider.mjs'))).digest('hex');
-  const settings = JSON.stringify({ ...connection, port: options.port, sourceHash }, null, 2) + '\n';
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-native-provider.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-compaction.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-migrate-session.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-workspace.mjs'))).digest('hex');
+  const settings = JSON.stringify({ ...connection, port: options.port, workspace, sourceHash }, null, 2) + '\n';
   if ((fs.existsSync(PATCH) && fs.readFileSync(PATCH, 'utf8') !== patch) ||
       (fs.existsSync(SETTINGS) && fs.readFileSync(SETTINGS, 'utf8') !== settings)) stopHarness();
   fs.writeFileSync(PATCH, patch);
   fs.writeFileSync(SETTINGS, settings);
+  const require = createRequire(path.join(RUNTIME, 'package.json'));
+  const yaml = require('js-yaml');
+  class JsExpression { constructor(code) { this.code = code; } }
+  const schema = yaml.DEFAULT_SCHEMA.extend([new yaml.Type('tag:yaml.org,2002:js', {
+    kind: 'scalar', construct: code => new JsExpression(code), instanceOf: JsExpression, represent: expression => expression.code,
+  })]);
+  // Compose user customizations first, then patch every preset's isolated
+  // engine. No upstream package files or unrelated preset fields are edited.
+  const webSource = run(process.execPath, [BIN, 'web', '--patch', PATCH, '--dump-config'], { env: environment(), maxBuffer: 8 * 1024 * 1024 }).stdout;
+  const webTree = yaml.load(webSource, { schema });
+  const replacement = JSON.parse(patch).find(row => row.id === 'compaction-basic');
+  const presets = webTree.filter(row => row.name === '@deepseek-ai/dsh-agent-preset')
+    .map(row => rewriteCompactionTree(row, replacement));
+  if (!presets.some(row => row.config?.id === 'standard')) throw new Error('Cannot locate the standard Web preset; refusing incomplete context tuning.');
   for (const [profile, id, dependency] of [['headless', 'headless-runner', 'headlessStartup'], ['web', 'web-runtime', 'webStartup']]) {
-    fs.writeFileSync(path.join(RUNTIME, `${profile}-guard.patch.yml`), JSON.stringify([
+    const guards = [
       { id, inject: [dependency, 'ollamaforgeNativeReady'] },
-    ], null, 2));
+    ];
+    if (profile === 'web') guards.push({ insert: [{ id: 'ollamaforge-workspace', name: pathToFileURL(path.join(ROOT, 'deepseek-workspace.mjs')).href, config: { directory: workspace } }] }, ...presets);
+    const migration = path.join(RUNTIME, 'migration-request.json');
+    if (profile === 'web' && fs.existsSync(migration)) {
+      guards[0].inject.push('ollamaforgeMigrationReady');
+      guards.push({ insert: [{ id: 'ollamaforge-session-migration', name: pathToFileURL(path.join(ROOT, 'deepseek-migrate-session.mjs')).href, config: { requestFile: migration } }] });
+    }
+    fs.writeFileSync(path.join(RUNTIME, `${profile}-guard.patch.yml`), yaml.dump(guards, { schema, noRefs: true, lineWidth: -1 }));
   }
   const composed = run(process.execPath, args('headless', ['--dump-config']), { env: environment(), maxBuffer: 8 * 1024 * 1024 }).stdout;
   if (!composed.includes('ollamaforge-local')) throw new Error('Harness did not compose the local provider.');
@@ -228,9 +275,9 @@ function openBrowser(url) {
 export function testHarness() {
   const directory = fs.mkdtempSync(path.join(RUNTIME, 'live-test-'));
   const marker = `HARNESS_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  fs.writeFileSync(path.join(directory, 'read-me.txt'), `The test marker is ${marker}.`);
-  const result = run(process.execPath, args('headless', ['--json', 'Read read-me.txt using the file read tool. Write its exact contents into result.txt using the file write tool. Then reply with the test marker you read.']), {
-    cwd: directory, env: environment(), timeout: 600000, maxBuffer: 4 * 1024 * 1024,
+  fs.writeFileSync(path.join(directory, 'read-me.txt'), `The test marker is ${marker}.\n`);
+  const result = run(process.execPath, args('headless', ['--json', 'Read read-me.txt using the file read tool. Write its exact contents into result.txt using the file write tool, preserving the source file\'s single trailing LF newline. Then reply with the test marker you read.']), {
+    cwd: directory, env: { ...environment(), DSH_HOME: path.join(directory, '.harness-home') }, timeout: 600000, maxBuffer: 4 * 1024 * 1024,
   });
   fs.writeFileSync(path.join(directory, 'events.jsonl'), result.stdout);
   fs.writeFileSync(path.join(directory, 'stderr.log'), result.stderr);
@@ -246,7 +293,7 @@ export function testHarness() {
 
 export function runHarnessTask(task, cwd) {
   return new Promise((resolve, reject) => execFile(process.execPath, args('headless', ['--json', task]), {
-    cwd, env: environment(), windowsHide: true, timeout: 600000, maxBuffer: 8 * 1024 * 1024,
+    cwd, env: { ...environment(), DSH_HOME: path.join(cwd, '.harness-home') }, windowsHide: true, timeout: 600000, maxBuffer: 8 * 1024 * 1024,
   }, (error, stdout, stderr) => {
     fs.writeFileSync(path.join(cwd, 'events.jsonl'), stdout);
     fs.writeFileSync(path.join(cwd, 'stderr.log'), stderr);
@@ -270,7 +317,12 @@ export function auditControlEvents(events, id, receipts) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const options = parseHarnessArgs(process.argv.slice(2));
-    if (options.command === 'serve') serveHarness();
+    if (options.command === 'repair-workspace') {
+      if (process.platform !== 'win32') throw new Error('The directory-permission repair is for Windows only.');
+      const saved = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
+      const workspace = resolveProjectWorkspace(options.workspace ?? saved.workspace ?? ROOT);
+      windowsScript('Repair-DeepSeekWorkspace.ps1', ['-Path', workspace, ...(options.apply ? ['-Apply'] : []), '-BackupDirectory', path.join(RUNTIME, 'recovery', 'workspace-permissions')]);
+    } else if (options.command === 'serve') serveHarness();
     else if (options.command === 'stop') {
       stopHarness();
     } else {

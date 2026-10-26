@@ -26,6 +26,12 @@
 !test-desktop-smoke.mjs
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
+!deepseek-compaction.mjs
+!deepseek-recovery.mjs
+!deepseek-workspace.mjs
+!deepseek-migrate-session.mjs
+!Repair-DeepSeekWorkspace.ps1
+!test-deepseek-recovery.mjs
 !deepseek-native-provider.mjs
 !test-deepseek-harness.mjs
 !test-deepseek-controls.mjs

@@ -266,6 +266,35 @@ npm run download:27b
 npm run launch:deepseek
 ```
 
+可以明确指定实际项目，例如
+`npm run launch:deepseek -- --workspace D:\Documents\GitHub\你的项目`。
+选择会保存供桌面入口使用，并在 Web 界面注册。默认工作区拒绝使用运行时和测试目录；
+真实验收会使用各自隔离的 Harness 数据目录，不会再让测试文件夹混入用户的工作区。
+
+压缩预算按本地模型容量设置：128K 模型约到 109K 才触发，额外预留 8K，摘要上限 2K。
+失败的摘要会等到历史有明显增长后再尝试，不会每次工具调用后都重试。
+接近硬上限时会保留历史并明确停止；上下文溢出的独立恢复仍有次数上限。Web 各预设独立的
+压缩器也应用相同预算，保留用户预设中的工具和其他设置。Codex 的云端连接配置不变。
+
+`deepseek-recovery.mjs` 提供保守的迁移辅助：备份有效会话日志、保留源文件、逐个校验
+SHA-256，目标文件有冲突时先拒绝，不覆盖用户已有内容。`working_directory` 只改变当前
+目录，不改变会话的沙箱写入边界。需要迁移旧测试会话时，`deepseek-migrate-session.mjs`
+使用官方会话种子接口，在真实项目中创建继承完整事件历史的续接会话；原会话保留。
+迁移请求和校验记录只放在本机忽略提交的运行时目录，普通启动不会自动迁移其他会话。
+
+Windows 的隔离命令执行器需要为项目目录写入权限项和完整性标签。如果目录属于当前用户，
+但初始化时报 `grantWrite / SetNamedSecurityInfoW`，可先诊断：
+
+```powershell
+npm run repair:deepseek-workspace -- --workspace 'D:\Documents\GitHub\你的项目'
+# 确认需要修复后：
+npm run repair:deepseek-workspace -- --workspace 'D:\Documents\GitHub\你的项目' --apply
+```
+
+修复只为当前所有者补充项目根目录的 `ChangePermissions` 和 `TakeOwnership` 权限，
+用于隔离执行器初始化；不递归，不更改所有者，不删除其他权限项，也不切换到完全权限模式。
+原权限记录会先备份到本机 `.runtime/deepseek-harness/recovery/workspace-permissions/`。
+
 命令会安装固定版本的官方 `@deepseek-ai/dsh`、原生 Cua Driver 和 Chrome
 DevTools 控制插件，连接现有本地模型，并打开已认证的
 `http://127.0.0.1:3080` 界面。Windows 上还会创建桌面快捷方式

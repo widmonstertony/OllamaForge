@@ -299,6 +299,46 @@ From this checkout, run:
 npm run launch:deepseek
 ```
 
+Choose a real project explicitly with
+`npm run launch:deepseek -- --workspace /absolute/path/to/project` (on Windows,
+use its full drive path). The selection is saved for the desktop launcher and
+registered in the Web UI. Runtime/test directories are rejected as default
+workspaces. Real headless checks use their own isolated Harness homes, so running
+tests cannot make a test folder become the user's project.
+
+Local compaction is sized to the selected model: at 128K it starts around 109K
+tokens, reserves 8K of headroom and limits a summary to 2K tokens. A failed summary
+is deferred until substantial new history arrives, rather than retried after
+every tool call. Near the hard context limit the task stops with its history
+preserved; the separate overflow-recovery attempt remains bounded. Codex's cloud
+connection settings are unchanged. The same budget applies to each Web preset's isolated
+compaction engine while preserving its tools and other customizations.
+
+`deepseek-recovery.mjs` provides a conservative recovery helper: it snapshots a
+valid session log, keeps source files, verifies copied files with SHA-256 and
+refuses conflicting destination files before writing. `working_directory` changes
+the effective directory, but does not change a session's sandbox write boundary.
+For a legacy test session, `deepseek-migrate-session.mjs` uses the official seed API
+to create a continuation in the real project with its full event history inherited;
+the original session remains available. Migration requests and receipts stay in the
+ignored local runtime. Ordinary launches do not migrate other sessions.
+
+The Windows isolated shell must provision a directory grant and integrity label.
+If the current user owns the project but initialization reports
+`grantWrite / SetNamedSecurityInfoW`, diagnose it with:
+
+```powershell
+npm run repair:deepseek-workspace -- --workspace 'D:\Documents\GitHub\your-project'
+# Apply only if the diagnostic says it is needed:
+npm run repair:deepseek-workspace -- --workspace 'D:\Documents\GitHub\your-project' --apply
+```
+
+This adds only the current owner's root-directory `ChangePermissions` and
+`TakeOwnership` rights needed for sandbox provisioning. It does not recurse,
+change ownership, remove other entries or enable full-access mode. The original
+descriptor is backed up first under the ignored local
+`.runtime/deepseek-harness/recovery/workspace-permissions/` directory.
+
 This installs the pinned official `@deepseek-ai/dsh` runtime and its native
 Cua Driver and Chrome DevTools providers, connects an existing local model, and
 opens the authenticated Web UI at `http://127.0.0.1:3080`. On Windows it also
