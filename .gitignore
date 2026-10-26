@@ -25,6 +25,13 @@
 !desktop-smoke.mjs
 !test-desktop-smoke.mjs
 !DESKTOP-CONTROL.md
+!deepseek-harness.mjs
+!deepseek-native-provider.mjs
+!test-deepseek-harness.mjs
+!test-deepseek-controls.mjs
+!Start-DeepSeekHarness.ps1
+!Run-DeepSeekHarness.ps1
+!Open-DeepSeekHarness.ps1
 !strata-config.mjs
 !strata-setup.mjs
 !Setup-Strata.ps1

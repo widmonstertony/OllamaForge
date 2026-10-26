@@ -258,6 +258,54 @@ npm run download:27b
 110K 两个别名。它不是默认 setup 的一部分；只有用户主动执行这条带
 `download` 的命令才会联网下载大模型。旧别名 `npm run deploy:27b` 仍保留兼容。
 
+## DeepSeek Harness 连接同一个本地模型
+
+在本仓库目录运行：
+
+```sh
+npm run launch:deepseek
+```
+
+命令会安装固定版本的官方 `@deepseek-ai/dsh`、原生 Cua Driver 和 Chrome
+DevTools 控制插件，连接现有本地模型，并打开已认证的
+`http://127.0.0.1:3080` 界面。Windows 上还会创建桌面快捷方式
+**OllamaForge - DeepSeek Harness**，通过当前用户的后台任务运行，不显示终端。
+任务按需启动；重启电脑后也可以用快捷方式启动。Codex 原有连接和开机配置保留。
+
+优先读取 Strata `/health` 中实际的模型、上下文和图片支持；没有 Strata 时，
+选择 Ollama 中已经安装的模型。不会下载模型权重。运行包、私有访问令牌、会话、
+配置和日志保存在忽略提交的 `.runtime/deepseek-harness/` 中，不修改已有 `~/.dsh`。
+
+```sh
+npm run connect:deepseek
+npm run test:deepseek
+npm run test:deepseek-controls
+npm run stop:deepseek
+```
+
+`connect:deepseek` 只配置连接；`test:deepseek` 让真正的 Harness 读取随机标记、
+写入新文件并回复标记。`test:deepseek-controls` 打开专属本地测试页面，通过
+独立的服务端回执和工具事件验证原生点击输入、Chrome 填写点击。
+需要 Windows 桌面可见且已解锁。普通 `npm test` 只验证离线策略，不安装运行包或操作桌面。
+
+指定其他本地接口时，需要填写已经安装的模型和真实上下文容量：
+
+```sh
+npm run launch:deepseek -- --base-url http://127.0.0.1:8080/v1 --model qwen3.8-flash-next-iq3_s --context 131072 --api openai-responses
+```
+
+3080 被其他应用占用时加 `--port 3081`；不打开浏览器时加 `--no-open`。
+修改连接会停止本仓库拥有的 Harness Web 进程，再运行 `launch:deepseek` 打开。
+Windows 和 Unix 的停止路径都会先检查进程归属。
+
+电脑控制使用 Harness 自己的原生驱动，不复用 Codex 的私有插件、权限或浏览器连接。
+Chrome 为每个运行中的会话打开独立可见实例。系统权限仍然适用；截图工具需要模型接口
+已经验证支持图片，纯文本接口不能理解截图。两个驱动目前都是实验性插件。
+参考[官方 Harness 仓库](https://github.com/deepseek-ai/deepseek-harness)。
+仓库附带的原生适配层会把驱动的结构化快照句柄、控件句柄完整传给模型，修复上游
+纯文本投影丢失句柄的问题。Web 和命令行模式都要求原生适配器与 Chrome 插件先成功
+加载，缺少驱动时直接报错，不会悄悄退化成部分成功。
+
 ## 隐私边界
 
 - 选择本地模型时，模型推理请求发送到 `127.0.0.1:11434`；

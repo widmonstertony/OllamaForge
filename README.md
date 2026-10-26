@@ -291,6 +291,63 @@ default setup. A model is downloaded only when you deliberately run this
 `download` command. The old `npm run deploy:27b` name remains as a compatibility
 alias.
 
+## DeepSeek Harness with the same local model
+
+From this checkout, run:
+
+```sh
+npm run launch:deepseek
+```
+
+This installs the pinned official `@deepseek-ai/dsh` runtime and its native
+Cua Driver and Chrome DevTools providers, connects an existing local model, and
+opens the authenticated Web UI at `http://127.0.0.1:3080`. On Windows it also
+creates **OllamaForge - DeepSeek Harness** on the desktop and starts a user-owned
+background task with no terminal window. The task starts on demand; the shortcut
+also starts it after a reboot. It does not change Codex's startup or providers.
+
+Strata is preferred when available: its actual model, context capacity and image
+support are read from `/health`. Otherwise an already installed Ollama model is
+selected. No model weights are downloaded. Harness packages, private startup
+tokens, sessions, configuration and logs stay in the ignored
+`.runtime/deepseek-harness/` directory; an existing `~/.dsh` is left alone.
+
+```sh
+npm run connect:deepseek
+npm run test:deepseek
+npm run test:deepseek-controls
+npm run stop:deepseek
+```
+
+`connect:deepseek` only configures the connection. `test:deepseek` runs the real
+Harness to read a random file, write a new file and reply with the marker.
+`test:deepseek-controls` opens a disposable local page and verifies native
+click/typing and Chrome fill/click using separate server receipts plus tool
+events. It needs an unlocked, visible Windows desktop. Ordinary `npm test` runs
+offline policy tests, not desktop actions or runtime installation.
+
+To select another local endpoint, name its installed model and actual context:
+
+```sh
+npm run launch:deepseek -- --base-url http://127.0.0.1:8080/v1 --model qwen3.8-flash-next-iq3_s --context 131072 --api openai-responses
+```
+
+Use `--port 3081` if 3080 belongs to another app, or `--no-open` to keep the Web UI
+in the background. Changing the connection stops only this checkout's owned
+Harness Web process; run `launch:deepseek` to reopen it. Windows and Unix stop
+paths verify ownership before stopping processes.
+
+Computer control uses Harness's own native driver, not Codex's private plugin,
+permissions or browser connection. Chrome uses a separate, visible Chromium
+instance for each live session. OS permissions still apply. Image tools require
+a model endpoint with verified image support; text-only routes cannot interpret
+screenshots. The providers are experimental. See the
+[official Harness project](https://github.com/deepseek-ai/deepseek-harness).
+The repository's small native adapter preserves the driver's structured snapshot
+and element handles in the model-visible result, fixing the upstream text-only
+projection. Both profiles require the native adapter and Chrome provider before
+starting, so missing drivers cannot silently become a partial success.
+
 ## Privacy boundaries
 
 - with a local model selected, inference requests go to `127.0.0.1:11434`;
