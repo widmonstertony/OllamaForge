@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync, execFile } from 'node:child_process';
 
 export const DSH_VERSION = '0.2.1-rc.2';
@@ -121,7 +122,9 @@ export async function connectHarness(options) {
   fs.mkdirSync(HOME, { recursive: true });
   // JSON is valid YAML; no shared ~/.dsh profile, credential or Codex config is edited.
   const patch = JSON.stringify(buildHarnessPatch(connection), null, 2) + '\n';
-  const settings = JSON.stringify({ ...connection, port: options.port }, null, 2) + '\n';
+  const sourceHash = createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url)))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-native-provider.mjs'))).digest('hex');
+  const settings = JSON.stringify({ ...connection, port: options.port, sourceHash }, null, 2) + '\n';
   if ((fs.existsSync(PATCH) && fs.readFileSync(PATCH, 'utf8') !== patch) ||
       (fs.existsSync(SETTINGS) && fs.readFileSync(SETTINGS, 'utf8') !== settings)) stopHarness();
   fs.writeFileSync(PATCH, patch);
@@ -140,7 +143,13 @@ export async function connectHarness(options) {
 export function serveHarness() {
   if (!fs.existsSync(SETTINGS) || !fs.existsSync(PATCH)) throw new Error('Run npm run connect:deepseek first.');
   const { port } = JSON.parse(fs.readFileSync(SETTINGS));
-  const child = spawn(process.execPath, args('web', ['--host', '127.0.0.1', '--port', String(port), '--no-open']), { env: environment(), stdio: 'inherit', windowsHide: true });
+  // Keep native stderr out of Windows PowerShell 5.1's NativeCommandError path.
+  // These are UTF-8 logs; a fresh process also gets a fresh private startup URL.
+  const stdout = fs.openSync(WEB_LOG, 'w');
+  const stderr = fs.openSync(path.join(RUNTIME, 'web.stderr.log'), 'w');
+  let child;
+  try { child = spawn(process.execPath, args('web', ['--host', '127.0.0.1', '--port', String(port), '--no-open']), { env: environment(), stdio: ['ignore', stdout, stderr], windowsHide: true }); }
+  finally { fs.closeSync(stdout); fs.closeSync(stderr); }
   child.on('error', error => { console.error(error.message); process.exitCode = 1; });
   child.on('exit', code => { process.exitCode = code ?? 1; });
   return child;
