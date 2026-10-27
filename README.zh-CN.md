@@ -266,6 +266,9 @@ npm run download:27b
 npm run launch:deepseek
 ```
 
+首次连接或重新部署时，Web 界面默认使用中文，并保存到本机 Harness 的语言设置中，
+不再随浏览器语言变回英文。以后在“设置 → 通用设置 → 语言”中手动选择的语言会保留。
+
 可以明确指定实际项目，例如
 `npm run launch:deepseek -- --workspace D:\Documents\GitHub\你的项目`。
 选择会保存供桌面入口使用，并在 Web 界面注册。默认工作区拒绝使用运行时和测试目录；

@@ -299,6 +299,10 @@ From this checkout, run:
 npm run launch:deepseek
 ```
 
+Fresh deployments seed Chinese as the durable Web UI language, independent of
+the browser's language. Later choices in Settings → General → Language are
+preserved across reconnects and redeployments.
+
 Choose a real project explicitly with
 `npm run launch:deepseek -- --workspace /absolute/path/to/project` (on Windows,
 use its full drive path). The selection is saved for the desktop launcher and

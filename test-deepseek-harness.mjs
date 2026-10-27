@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
-import { parseHarnessArgs, validateLocalURL, discoverConnection, buildHarnessPatch, auditControlEvents } from './deepseek-harness.mjs';
+import { parseHarnessArgs, validateLocalURL, discoverConnection, buildHarnessPatch, auditControlEvents, withDefaultHarnessLocale } from './deepseek-harness.mjs';
 import { projectNativeResult } from './deepseek-native-provider.mjs';
+
+assert.equal(withDefaultHarnessLocale()[0].config.preference, 'zh', 'Fresh deployments default to Chinese.');
+const englishPreference = [{ id: 'locale', config: { preference: 'en' } }, { id: 'other', config: { untouched: true } }];
+assert.equal(withDefaultHarnessLocale(englishPreference), englishPreference, 'An explicit later language choice is preserved without rewriting its file.');
+const unrelatedPreference = [{ id: 'other', config: { untouched: true } }, { id: 'locale', config: { custom: true } }];
+const seededPreference = withDefaultHarnessLocale(unrelatedPreference);
+assert.deepEqual(seededPreference[0], unrelatedPreference[0]);
+assert.deepEqual(seededPreference[1].config, { custom: true, preference: 'zh' });
+assert.equal(withDefaultHarnessLocale(seededPreference), seededPreference, 'Redeployment keeps the saved locale.');
+assert.throws(() => withDefaultHarnessLocale({ locale: 'en' }), /patch list/);
 
 assert.equal(parseHarnessArgs(['launch', '--port', '3081', '--no-open']).port, 3081);
 assert.equal(parseHarnessArgs(['launch', '--no-open']).noOpen, true);

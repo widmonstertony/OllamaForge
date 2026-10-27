@@ -137,6 +137,15 @@ function windowsScript(script, action = []) {
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, script), ...action], { env, stdio: 'inherit' });
 }
 
+export function withDefaultHarnessLocale(rows = []) {
+  if (!Array.isArray(rows)) throw new Error('Harness Web preferences must be a patch list.');
+  const locale = rows.find(row => row?.id === 'locale');
+  if (locale?.config?.preference) return rows;
+  const configured = { ...locale, id: 'locale', name: '@deepseek-ai/dsh-client-locale',
+    config: { ...locale?.config, preference: 'zh' } };
+  return locale ? rows.map(row => row === locale ? configured : row) : [...rows, configured];
+}
+
 export async function connectHarness(options) {
   const connection = await discoverConnection(options);
   ensureInstalled();
@@ -161,6 +170,15 @@ export async function connectHarness(options) {
   const schema = yaml.DEFAULT_SCHEMA.extend([new yaml.Type('tag:yaml.org,2002:js', {
     kind: 'scalar', construct: code => new JsExpression(code), instanceOf: JsExpression, represent: expression => expression.code,
   })]);
+  // Seed the Host preference once, so an English browser cannot reset a fresh
+  // deployment. Keep later language choices and all other Web preferences.
+  const localeFile = path.join(HOME, 'profiles', 'web', 'cordis.patch.yml');
+  const preferences = fs.existsSync(localeFile) ? yaml.load(fs.readFileSync(localeFile, 'utf8'), { schema }) ?? [] : [];
+  const localized = withDefaultHarnessLocale(preferences);
+  if (localized !== preferences) {
+    fs.mkdirSync(path.dirname(localeFile), { recursive: true });
+    fs.writeFileSync(localeFile, yaml.dump(localized, { schema, noRefs: true, lineWidth: -1 }));
+  }
   // Compose user customizations first, then patch every preset's isolated
   // engine. No upstream package files or unrelated preset fields are edited.
   const webSource = run(process.execPath, [BIN, 'web', '--patch', PATCH, '--dump-config'], { env: environment(), maxBuffer: 8 * 1024 * 1024 }).stdout;
