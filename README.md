@@ -303,6 +303,29 @@ loopback bridge on port 1234. Conflicting services are never replaced. Initial
 OpenClaw startup can take several minutes; launchers wait for readiness. Each PC
 creates its own credentials and Python environment. Private state stays untracked.
 
+OpenClaw runs at normal priority with a hidden supervisor: it retries a failed
+child after five seconds, and a repeating one-minute, single-instance trigger
+recovers a dead supervisor. Launchers wait for the loaded Strata model, Gateway
+readiness, a real reply in a separate startup-check session, and successful run
+settlement. Serving the dashboard HTML alone is insufficient. Full cold startup
+still takes time; login startup performs it automatically.
+
+The default bundled skills cover Windows development, GitHub, debugging and
+visualization, with continuous skill watching off. Explicit user skill/watch
+choices take precedence; the existing computer/browser tool policy is retained.
+The child environment deduplicates PATH, includes this checkout's private OpenClaw
+CLI directory, and discovers installed Git/GitHub Desktop Git. Qwen uses the
+official `qwen-chat-template` dialect to send a real
+`enable_thinking=false` by default, while preserving selectable thinking levels.
+Unconfigured recurring model heartbeats default to off to reduce contention;
+explicit existing heartbeat settings are preserved.
+
+Run `npm run test:openclaw` for authentication/readiness/failure tests, or
+`npm run test:openclaw-live` for real first/follow-up replies and a random-file
+read proof. Local timings are saved to ignored `.runtime/openclaw-latency.json`.
+Initial long-prompt prefill and contention from other model clients still affect
+latency.
+
 ## DeepSeek Harness with the same local model
 
 From this checkout, run:

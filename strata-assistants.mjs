@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { openClawEnvironment, openClawToolDirectories, strataModelDefinition, withOpenClawPerformanceDefaults } from './openclaw-performance.mjs';
+import { warmOpenClaw } from './openclaw-startup.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME = path.join(ROOT, '.runtime', 'openclaw');
@@ -32,12 +34,12 @@ async function connect() {
     '--custom-model-id', health.model, '--custom-api-key', 'local-strata-no-auth', '--custom-compatibility', 'openai',
     '--gateway-bind', 'loopback', '--gateway-port', '18789', '--gateway-auth', 'token', '--workspace', path.join(RUNTIME, 'workspace'),
     '--skip-daemon', '--skip-skills', '--skip-channels', '--skip-search', '--skip-hooks', '--skip-ui', '--skip-health', '--suppress-gateway-token-output']);
-  const config = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
+  let config = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
   const original = JSON.stringify(config);
+  config = withOpenClawPerformanceDefaults(config);
   config.models ??= {}; config.models.providers ??= {};
   config.models.providers.strata = { baseUrl: 'http://127.0.0.1:8080/v1', api: 'openai-completions', apiKey: 'local-strata-no-auth',
-    models: [{ id: health.model, name: 'Strata · Qwen3.8 Flash 128K', contextTokens: health.max_context, maxTokens: 8192,
-      reasoning: false, input: health.images ? ['text', 'image'] : ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] };
+    models: [strataModelDefinition(health)] };
   config.agents ??= {}; config.agents.defaults ??= {};
   config.agents.defaults.model = { ...(typeof config.agents.defaults.model === 'object' ? config.agents.defaults.model : {}), primary: `strata/${health.model}` };
   config.agents.defaults.thinkingDefault = 'off';
@@ -56,7 +58,7 @@ async function connect() {
   console.log(`Connected OpenClaw and JARVIS to Strata: ${health.model}, ${health.max_context} context. No model download.`);
 }
 
-function serve(kind) {
+async function serve(kind) {
   const saved = JSON.parse(fs.readFileSync(SAVED, 'utf8'));
   const log = prefix => fs.openSync(path.join(ROOT, '.runtime', `${kind}.${prefix}.log`), 'a');
   const exe = kind === 'openclaw' ? process.execPath : saved.python;
@@ -64,17 +66,38 @@ function serve(kind) {
     : [path.join(saved.jarvis, 'scripts', 'browser_bridge.py'), '--port', String(saved.jarvisPort), '--upstream', 'http://127.0.0.1:8080/v1'];
   const out = log('stdout'), err = log('stderr');
   let child;
-  try { child = spawn(exe, args, { cwd: kind === 'openclaw' ? ROOT : saved.jarvis, windowsHide: true, stdio: ['ignore', out, err] }); }
+  try { child = spawn(exe, args, { cwd: kind === 'openclaw' ? ROOT : saved.jarvis, env: kind === 'openclaw'
+    ? openClawEnvironment(process.env, [path.join(RUNTIME, 'node_modules', '.bin'), ...openClawToolDirectories()])
+    : process.env, windowsHide: true, stdio: ['ignore', out, err] }); }
   finally { fs.closeSync(out); fs.closeSync(err); }
-  child.on('error', error => { console.error(error.message); process.exitCode = 1; });
-  child.on('exit', code => { process.exitCode = code ?? 1; });
+  const controller = new AbortController();
+  const receiptFile = path.join(ROOT, '.runtime', 'openclaw-ready.json');
+  const removeReceipt = () => {
+    if (kind !== 'openclaw') return;
+    try { if (JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid) fs.unlinkSync(receiptFile); } catch { }
+  };
+  child.on('error', error => { controller.abort(); removeReceipt(); console.error(error.message); process.exitCode = 1; });
+  child.on('exit', code => { controller.abort(); removeReceipt(); process.exitCode = code ?? 1; });
+  if (kind === 'openclaw' && child.pid) {
+    try { fs.unlinkSync(receiptFile); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await warmOpenClaw({ configFile: CONFIG, identityFile: path.join(ROOT, '.runtime', 'openclaw-client-identity.json'), receiptFile,
+      pid: child.pid, model: saved.model, signal: controller.signal });
+  }
 }
 
 try {
   const command = process.argv[2] ?? 'connect';
   if (command === 'connect') await connect();
-  else if (command === 'serve-openclaw') serve('openclaw');
-  else if (command === 'serve-jarvis') serve('jarvis');
+  else if (command === 'serve-openclaw') await serve('openclaw');
+  else if (command === 'serve-jarvis') await serve('jarvis');
+  else if (command === 'warm-openclaw') {
+    const pid = Number(process.argv[3]);
+    if (!Number.isInteger(pid) || pid < 1) throw new Error('Expected an existing OpenClaw PID.');
+    process.kill(pid, 0);
+    const saved = JSON.parse(fs.readFileSync(SAVED, 'utf8'));
+    await warmOpenClaw({ configFile: CONFIG, identityFile: path.join(ROOT, '.runtime', 'openclaw-client-identity.json'),
+      receiptFile: path.join(ROOT, '.runtime', 'openclaw-ready.json'), pid, model: saved.model, signal: new AbortController().signal });
+  }
   else if (command === 'launch') {
     const env = { ...process.env }; delete env.PSModulePath;
     run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),

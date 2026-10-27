@@ -269,6 +269,24 @@ OpenClaw 保持本机令牌认证；JARVIS 网页通过原有受限桥接的 123
 端口被其他应用使用时会拒绝覆盖。首次 OpenClaw 初始化可能需要几分钟，入口会等待就绪。
 其他机器需要自行初始化认证和 Python 环境；本机配置、令牌、会话和权重均不提交。
 
+OpenClaw 登录任务使用正常优先级和无终端的进程监护：子进程退出后五秒重试，
+每分钟的单实例触发还能恢复监护进程本身。入口会等待 Strata 已加载、Gateway
+就绪，以及独立自检会话的真实回复和运行提交完成；HTML 能打开不代表模型就绪。
+完整冷启动仍需加载运行环境，登录后自动完成，无需手动运行命令。
+
+默认技能集面向 Windows 开发、GitHub、调试和可视化，关闭技能目录的持续扫描；
+已有明确的技能选择和 watch 设置优先保留。电脑、浏览器等工具配置继续沿用。
+启动环境自动去重 PATH，加入本仓库私有 OpenClaw 命令目录，并寻找已有
+Git/GitHub Desktop 的 Git。Qwen 使用官方
+`qwen-chat-template` 方言，默认向 Strata 明确发送 `enable_thinking=false`；
+仍可在 OpenClaw 中选择思考级别。未明确配置的周期性模型心跳默认关闭，减少后台争用；
+已有显式心跳设置继续保留。
+
+`npm run test:openclaw` 运行就绪/认证/故障单元测试；
+`npm run test:openclaw-live` 实际测试新会话、后续回复和随机文件读取，
+并把本机耗时写入未跟踪的 `.runtime/openclaw-latency.json`。
+长上下文首次预填充和多个应用共用同一模型时的排队仍会影响耗时。
+
 ## DeepSeek Harness 连接同一个本地模型
 
 在本仓库目录运行：

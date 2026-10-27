@@ -27,6 +27,11 @@
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
 !strata-assistants.mjs
+!openclaw-performance.mjs
+!openclaw-gateway.mjs
+!openclaw-startup.mjs
+!test-openclaw-startup.mjs
+!test-openclaw-live.mjs
 !Start-StrataAssistants.ps1
 !Run-OpenClaw.ps1
 !Run-JarvisStrata.ps1
