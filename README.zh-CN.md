@@ -258,6 +258,17 @@ npm run download:27b
 110K 两个别名。它不是默认 setup 的一部分；只有用户主动执行这条带
 `download` 的命令才会联网下载大模型。旧别名 `npm run deploy:27b` 仍保留兼容。
 
+## OpenClaw 和 LeetTutor JARVIS 连接 Strata（Windows）
+
+Windows 还可连接 OpenClaw 和 LeetTutor JARVIS：准备相邻的 `Leetcode` 仓库及其
+`.venv`，在本仓库运行 `npm run connect:assistants`，再运行 `npm run launch:assistants`。
+前者安装固定版本的官方 OpenClaw 运行包，保存两个助手的 Strata 连接；不会下载模型。
+后者注册当前用户的隐藏登录任务，并创建 **OllamaForge - OpenClaw Strata** 和
+**OllamaForge - JARVIS Strata** 桌面入口。也可向 connect 命令传入 Leetcode 的完整目录。
+OpenClaw 保持本机令牌认证；JARVIS 网页通过原有受限桥接的 1234 端口访问 Strata。
+端口被其他应用使用时会拒绝覆盖。首次 OpenClaw 初始化可能需要几分钟，入口会等待就绪。
+其他机器需要自行初始化认证和 Python 环境；本机配置、令牌、会话和权重均不提交。
+
 ## DeepSeek Harness 连接同一个本地模型
 
 在本仓库目录运行：

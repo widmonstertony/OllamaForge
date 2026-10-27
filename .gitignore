@@ -26,6 +26,12 @@
 !test-desktop-smoke.mjs
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
+!strata-assistants.mjs
+!Start-StrataAssistants.ps1
+!Run-OpenClaw.ps1
+!Run-JarvisStrata.ps1
+!Open-OpenClaw.ps1
+!Open-JarvisStrata.ps1
 !deepseek-compaction.mjs
 !deepseek-recovery.mjs
 !deepseek-workspace.mjs

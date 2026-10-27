@@ -8,6 +8,8 @@
     "setup": "node connect.mjs",
     "connect": "node connect.mjs",
     "connect:deepseek": "node deepseek-harness.mjs connect",
+    "connect:assistants": "node strata-assistants.mjs connect",
+    "launch:assistants": "node strata-assistants.mjs launch",
     "repair:deepseek-workspace": "node deepseek-harness.mjs repair-workspace",
     "launch:deepseek": "node deepseek-harness.mjs launch",
     "stop:deepseek": "node deepseek-harness.mjs stop",

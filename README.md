@@ -291,6 +291,18 @@ default setup. A model is downloaded only when you deliberately run this
 `download` command. The old `npm run deploy:27b` name remains as a compatibility
 alias.
 
+## OpenClaw and LeetTutor JARVIS on Strata (Windows)
+
+On Windows, optionally connect OpenClaw and LeetTutor JARVIS with
+`npm run connect:assistants`, then `npm run launch:assistants`. Prepare the sibling
+`Leetcode` checkout and its `.venv` first, or pass its full path to the connect
+command. This installs a pinned official OpenClaw runtime, reuses Strata without
+downloading weights, and creates hidden user login tasks and two desktop shortcuts.
+OpenClaw retains local token authentication; JARVIS uses the existing bounded
+loopback bridge on port 1234. Conflicting services are never replaced. Initial
+OpenClaw startup can take several minutes; launchers wait for readiness. Each PC
+creates its own credentials and Python environment. Private state stays untracked.
+
 ## DeepSeek Harness with the same local model
 
 From this checkout, run:
