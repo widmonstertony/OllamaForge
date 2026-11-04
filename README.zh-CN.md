@@ -258,6 +258,37 @@ npm run download:27b
 110K 两个别名。它不是默认 setup 的一部分；只有用户主动执行这条带
 `download` 的命令才会联网下载大模型。旧别名 `npm run deploy:27b` 仍保留兼容。
 
+## 恢复提供商不匹配的旧 Codex 对话
+
+若出现 `This chat uses ollamaforge, but your current provider is openai`，
+它是提供商一致性检查，并非模型安全拒绝。先运行只读诊断：
+
+```sh
+npm run repair:thread -- --thread <原对话UUID>
+```
+
+确认需要接续时运行：
+
+```sh
+npm run repair:thread -- --thread <原对话UUID> --apply
+```
+
+命令备份原记录，再通过官方 Codex app-server 导出完整分页历史，并用当前提供商创建
+接续分支；逐条校验所有历史内容、轮次、原工作目录和提供商后返回新对话链接。
+原对话保留，工作文件仍在原目录，不修改全局提供商、模型目录、路由或认证，
+也不编辑 Codex 的数据库或应用文件。接续分支会有新 UUID，原链接不会被改写。
+
+重复运行会复用已验证的分支；分支中新增加的进度也会保留。活动中的原对话会拒绝迁移。
+若原对话有目标或附件，自动命令会停下，使用桌面官方同目录分支后可运行
+`--verify <接续对话UUID>` 完成验证，避免遗漏附属状态。
+桌面已持有分支时，不抢占其写入锁，需在该桌面里发送消息做最终回复验收。
+
+需要已安装支持分页历史的 Codex CLI。命令会从 PATH 查找原生可执行文件，
+也可通过 `--codex <完整路径>` 或 `OLLAMAFORGE_CODEX_BIN` 指定。
+私有备份与校验结果在 `.runtime/thread-recovery/`，不会提交 Git；完整历史备份可能较大。
+`npm run test:thread-recovery` 验证历史完整性、重复修复、配置保留和进程归属。
+参见 [官方提供商不匹配与完整历史分支说明](https://learn.chatgpt.com/docs/app-server)。
+
 ## OpenClaw 和 LeetTutor JARVIS 连接 Strata（Windows）
 
 Windows 还可连接 OpenClaw 和 LeetTutor JARVIS：准备相邻的 `Leetcode` 仓库及其

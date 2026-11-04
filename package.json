@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-context-policy.mjs && node test-strata-bridge.mjs && node test-desktop-smoke.mjs && node test-deepseek-harness.mjs && node test-deepseek-recovery.mjs && node test-openclaw-startup.mjs",
+    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-context-policy.mjs && node test-strata-bridge.mjs && node test-desktop-smoke.mjs && node test-deepseek-harness.mjs && node test-deepseek-recovery.mjs && node test-openclaw-startup.mjs && node test-repair-codex-thread.mjs",
     "setup": "node connect.mjs",
     "connect": "node connect.mjs",
+    "repair:thread": "node repair-codex-thread.mjs",
+    "test:thread-recovery": "node test-repair-codex-thread.mjs",
     "connect:deepseek": "node deepseek-harness.mjs connect",
     "connect:assistants": "node strata-assistants.mjs connect",
     "launch:assistants": "node strata-assistants.mjs launch",

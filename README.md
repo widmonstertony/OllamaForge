@@ -291,6 +291,40 @@ default setup. A model is downloaded only when you deliberately run this
 `download` command. The old `npm run deploy:27b` name remains as a compatibility
 alias.
 
+## Recover a Codex chat after a provider change
+
+`This chat uses ollamaforge, but your current provider is openai` is a provider
+consistency check. Diagnose without changing a chat or global configuration:
+
+```sh
+npm run repair:thread -- --thread <original-thread-UUID>
+```
+
+To continue its complete history on the currently configured provider:
+
+```sh
+npm run repair:thread -- --thread <original-thread-UUID> --apply
+```
+
+The command backs up the original rollout, uses the official Codex app-server to
+export all paginated history and fork a continuation, then compares every stored item, turn, working
+directory and provider before returning its new chat link. The original chat and
+workspace files stay in place. Global providers, model catalogs, routing and auth
+are unchanged; no app bundle or database is patched. The continuation has a new
+UUID; the original link is retained.
+
+Reruns reuse a verified continuation, preserving its additional progress. Active
+source turns are refused. Sources with goals or attachments require a desktop
+same-directory fork followed by `--verify <child-UUID>` so associated state is
+checked too. If the desktop already owns the continuation, the command retains its
+writer lease and asks you to test the next reply there.
+
+Install a Codex CLI with paginated history support. Executable discovery uses PATH;
+override with `--codex <path>` or `OLLAMAFORGE_CODEX_BIN`. Private backups and proof
+files stay in ignored `.runtime/thread-recovery/`; full history backups can be large.
+Run `npm run test:thread-recovery` for preservation, idempotence and process tests.
+See the [official provider mismatch/fork documentation](https://learn.chatgpt.com/docs/app-server).
+
 ## OpenClaw and LeetTutor JARVIS on Strata (Windows)
 
 On Windows, optionally connect OpenClaw and LeetTutor JARVIS with

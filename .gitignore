@@ -27,6 +27,9 @@
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
 !strata-assistants.mjs
+!codex-app-server.mjs
+!repair-codex-thread.mjs
+!test-repair-codex-thread.mjs
 !openclaw-performance.mjs
 !openclaw-gateway.mjs
 !openclaw-startup.mjs
