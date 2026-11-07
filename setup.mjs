@@ -154,8 +154,10 @@ export function runSetup(options, dependencies = {}) {
   const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
   const spec = MODEL_SPECS[options.model];
 
-  const capability = runCapture(ollama, ['launch', 'chatgpt', '--help']);
-  assertCommandSucceeded(capability, 'Ollama ChatGPT integration check');
+  if (platform === 'win32') {
+    const capability = runCapture(ollama, ['launch', 'chatgpt', '--help']);
+    assertCommandSucceeded(capability, 'Ollama ChatGPT integration check');
+  }
 
   if (spec.localFile) {
     const localFile = path.join(rootDir, spec.localFile);
@@ -179,6 +181,8 @@ export function runSetup(options, dependencies = {}) {
     if (!fs.existsSync(modelfile)) throw new Error(`Missing model definition: ${modelfile}`);
     runInherit(ollama, ['create', companion.alias, '-f', modelfile]);
   }
+
+  if (platform === 'darwin') return { model: spec, aliasOnly: true };
 
   const configDir = environment.CODEX_HOME || path.join(homeDir, '.codex');
   const configPath = path.join(configDir, 'config.toml');
@@ -237,7 +241,7 @@ export function runSetup(options, dependencies = {}) {
 function printHelp() {
   console.log(`Usage: npm run prepare:alias -- --model <9b|27b|27b-iq4-xs>\n\n` +
     `Creates a repository-managed alias from an already installed/imported model,\n` +
-    `configures it for ChatGPT/Codex, and never downloads model weights.`);
+    `and never downloads model weights. Windows also configures the desktop integration.`);
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
@@ -250,6 +254,10 @@ if (isDirectRun) {
     }
     const result = runSetup(options);
     console.log(`Ready: ${result.model.alias}`);
+    if (result.aliasOnly) {
+      console.log(`Use npm run setup -- --model ${result.model.alias} to install the local terminal shortcut.`);
+      process.exit(0);
+    }
     console.log(`Cloud default preserved: ${result.cloudDefault}`);
     console.log(`Selectable local models: ${result.localSlugs.join(', ')}`);
     console.log(`Backups: ${result.paths.backupDir}`);

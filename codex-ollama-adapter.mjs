@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { createLocalTokenCounter, fitMetalContext, isRuntimeContextMessage, localContextNotice, LocalContextError, trimStoredHistory } from './codex-local-context.mjs';
 
 const listenHost = '127.0.0.1';
 const listenPort = Number.parseInt(process.env.CODEX_OLLAMA_ADAPTER_PORT ?? '11435', 10);
@@ -13,6 +14,7 @@ const historyPath = process.env.CODEX_LOCAL_HISTORY_PATH || '';
 const maxHistoryTokens = Number.parseInt(process.env.CODEX_LOCAL_HISTORY_TOKENS ?? '3000', 10);
 const maxHistoryEntries = 64;
 const metalCoreToolNames = new Set(['exec_command', 'write_stdin', 'apply_patch', 'view_image']);
+const countLocalTokens = createLocalTokenCounter(upstream);
 
 if (!Number.isInteger(listenPort) || listenPort < 1 || listenPort > 65535) {
   throw new Error('CODEX_OLLAMA_ADAPTER_PORT must be a valid TCP port.');
@@ -40,9 +42,7 @@ function estimateTokens(value) {
 }
 
 function trimHistory(items) {
-  const trimmed = [...items];
-  while (trimmed.length > 1 && estimateTokens(trimmed) > maxHistoryTokens) trimmed.shift();
-  return trimmed;
+  return trimStoredHistory(items, maxHistoryTokens, estimateTokens);
 }
 
 function saveHistories() {
@@ -249,6 +249,13 @@ function normalizeResponsesRequest(body) {
       'Use only the tools provided in this request and respect tool errors, sandbox limits, and approval boundaries.'
     : extractInstructionText(body.instructions);
   if (instructionText.trim()) systemSections.push(instructionText.trim());
+  if (metalModel) {
+    const fullInstructions = extractInstructionText(body.instructions);
+    for (const tag of ['permissions instructions', 'environment_context', 'user_instructions', 'custom_instructions']) {
+      const block = fullInstructions.match(new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g'));
+      if (block) systemSections.push(...block);
+    }
+  }
 
   const sourceInput = Array.isArray(body.input)
     ? body.input
@@ -259,7 +266,7 @@ function normalizeResponsesRequest(body) {
   for (const item of sourceInput) {
     if (item && ['system', 'developer'].includes(item.role)) {
       const text = extractText(item.content);
-      if (!metalModel && text.trim()) systemSections.push(text.trim());
+      if (text.trim()) systemSections.push(text.trim());
       continue;
     }
     if (item?.type === 'function_call_output' && typeof item.call_id !== 'string') {
@@ -375,6 +382,22 @@ function captureSseHistory(line, context) {
   } catch {}
 }
 
+function compactResponse(payload, context) {
+  const summary = payload.output?.filter((item) => item?.type === 'message' && item.role === 'assistant')
+    .map((item) => extractText(item.content)).filter(Boolean).join('\n\n');
+  if (!summary) throw new Error('The local model returned no handoff summary. Compaction was not applied.');
+  const prefix = context.contextWasLimited
+    ? '[Local handoff summary: only the visible recent context was available. Earlier omitted or encrypted history is unavailable; do not claim to remember it.]'
+    : '[Local handoff summary: continue the same task using these verified details and the preserved user request.]';
+  return {
+    id: `compact_${crypto.randomUUID()}`,
+    object: 'response.compaction',
+    created_at: Math.floor(Date.now() / 1000),
+    output: [...context.compactPreserved, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `${prefix}\n${summary}` }] }],
+    ...(payload.usage ? { usage: payload.usage } : {}),
+  };
+}
+
 function forwardResponse(upstreamResponse, res, context) {
   const { bridge } = context;
   const responseHeaders = { ...upstreamResponse.headers };
@@ -425,8 +448,10 @@ function forwardResponse(upstreamResponse, res, context) {
     try {
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const translated = rewriteOutputForCodex(payload, bridge, context.metalModel);
-      rememberResponse(translated, context.historyBase);
-      const output = Buffer.from(JSON.stringify(translated), 'utf8');
+      const successful = (upstreamResponse.statusCode ?? 502) < 400;
+      const outgoing = context.isCompact && successful ? compactResponse(translated, context) : translated;
+      if (successful && !context.isCompact) rememberResponse(translated, context.historyBase);
+      const output = Buffer.from(JSON.stringify(outgoing), 'utf8');
       responseHeaders['content-length'] = String(output.length);
       res.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
       res.end(output);
@@ -438,7 +463,7 @@ function forwardResponse(upstreamResponse, res, context) {
   upstreamResponse.on('error', (error) => res.destroy(error));
 }
 
-function forward(req, res, rawBody) {
+async function forward(req, res, rawBody) {
   let outgoingBody = rawBody;
   let context = {
     bridge: flattenTools([]),
@@ -447,9 +472,11 @@ function forward(req, res, rawBody) {
     historyHit: false,
     metalModel: false,
     isResponses: false,
+    isCompact: false,
   };
-  const isResponses = req.method === 'POST' &&
-    new URL(req.url ?? '/', 'http://localhost').pathname.endsWith('/responses');
+  const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+  const isCompact = req.method === 'POST' && pathname.endsWith('/responses/compact');
+  const isResponses = req.method === 'POST' && (pathname.endsWith('/responses') || isCompact);
   context.isResponses = isResponses;
   if (isResponses) {
     try {
@@ -466,15 +493,36 @@ function forward(req, res, rawBody) {
                 ? rawBody
                 : (() => { throw new Error(`Unsupported content encoding: ${encoding}`); })();
       const parsed = JSON.parse(decodedBody.toString('utf8'));
-      const result = normalizeResponsesRequest(parsed);
-      const normalized = result.normalized;
-      context = { ...result, isResponses: true };
+      if (isCompact && String(parsed.model ?? '').replace(/:latest$/, '') !== 'qwen3.5-codex-metal-8k') {
+        throw new Error('Local compaction supports only qwen3.5-codex-metal-8k. Select the intended provider explicitly.');
+      }
+      const result = normalizeResponsesRequest(isCompact ? { ...parsed, stream: false, tools: [], tool_choice: 'none', max_output_tokens: 1024 } : parsed);
+      if (isCompact) {
+        result.normalized.input[0].content[0].text += '\n\nCurrent operation: create a concise handoff summary of this conversation for the next coding turn. ' +
+          'Summarize the actual user goal, user constraints and approvals, repository paths, verified actions and tool results, current progress, and remaining work. ' +
+          'Preserve exact identifiers and facts present in the visible context. Do not perform the task or call tools. ' +
+          'Clearly disclose any missing, encrypted or omitted history. Use the user\'s language. Keep the summary under 700 words.';
+      }
+      const budget = result.metalModel ? await fitMetalContext(result.normalized, countLocalTokens) : null;
+      if (req.aborted || res.destroyed) return;
+      const normalized = budget?.normalized ?? result.normalized;
+      result.historyBase = normalized.input.slice(1);
+      context = { ...result, isResponses: true, isCompact };
+      if (isCompact) {
+        const messages = Array.isArray(parsed.input) ? parsed.input : [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: parsed.input ?? '' }] }];
+        const latestUser = messages.findLastIndex((item) => item?.role === 'user');
+        const latestTaskUser = messages.findLastIndex((item) => item?.role === 'user' && !isRuntimeContextMessage(item));
+        context.compactPreserved = messages.filter((item, index) => ['system', 'developer'].includes(item?.role) || index === latestUser || index === latestTaskUser ||
+          (item?.role === 'user' && /<environment_context>|<permissions instructions>/.test(extractText(item.content))));
+        context.contextWasLimited = normalized.input.some((item) => extractText(item?.content).startsWith(localContextNotice));
+      }
       const unsupported = [...new Set(context.bridge.unsupportedTypes)].sort().join(',') || 'none';
-      process.stdout.write(`Responses request model=${parsed.model ?? ''} forwarded_model=${normalized.model} namespace_tools=${context.bridge.byWireName.size} unsupported_tool_types=${unsupported} history_id=${result.previousResponseId || 'none'} history_hit=${result.historyHit} reasoning=${JSON.stringify(parsed.reasoning ?? null)} forwarded_reasoning=${JSON.stringify(normalized.reasoning ?? null)} forwarded_effort=${normalized.reasoning_effort ?? ''}\n`);
+      process.stdout.write(`Responses request model=${parsed.model ?? ''} forwarded_model=${normalized.model} namespace_tools=${context.bridge.byWireName.size} unsupported_tool_types=${unsupported} history_id=${result.previousResponseId || 'none'} history_hit=${result.historyHit} reasoning=${JSON.stringify(parsed.reasoning ?? null)} forwarded_reasoning=${JSON.stringify(normalized.reasoning ?? null)} forwarded_effort=${normalized.reasoning_effort ?? ''} context_tokens=${budget?.measuredTokens ?? 'unlimited'} context_budget=${budget?.inputBudget ?? 'unlimited'} omitted_items=${budget?.omittedItems ?? 0}\n`);
       outgoingBody = Buffer.from(JSON.stringify(normalized), 'utf8');
     } catch (error) {
       res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { type: 'adapter_error', message: `Could not decode Responses request: ${error.message}` } }));
+      res.end(JSON.stringify({ error: { type: error instanceof LocalContextError ? error.type : 'adapter_error',
+        message: error instanceof LocalContextError ? error.message : `Could not decode Responses request: ${error.message}` } }));
       return;
     }
   }
@@ -490,7 +538,7 @@ function forward(req, res, rawBody) {
     hostname: upstream.hostname,
     port: upstream.port,
     method: req.method,
-    path: req.url,
+    path: isCompact ? '/v1/responses' : req.url,
     headers,
   }, (upstreamResponse) => forwardResponse(upstreamResponse, res, context));
 

@@ -3,13 +3,34 @@ import http from 'node:http';
 import { once } from 'node:events';
 
 const incoming = [];
+const counted = [];
 const upstream = http.createServer(async (req, res) => {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = JSON.parse(Buffer.concat(chunks).toString());
+  if (req.url === '/v1/responses/input_tokens') {
+    counted.push(body);
+    if (body.input.slice(1).some((item) => item.role === 'system')) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'System message must be at the beginning.' } }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ input_tokens: Math.ceil(JSON.stringify({ input: body.input, tools: body.tools }).length / 3) }));
+    return;
+  }
   incoming.push({ headers: req.headers, body });
   const testMode = req.headers['x-test-mode'];
   const bridgedTool = body.tools?.find((tool) => tool.name?.startsWith('t_'));
+  if (testMode === 'compact') {
+    assert.equal(req.url, '/v1/responses');
+    assert.equal(body.stream, false);
+    assert.deepEqual(body.tools, []);
+    assert.match(body.input[0].content[0].text, /create a concise handoff summary/);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ id: 'summary_response', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '用户需要继续修复切换逻辑。上次检查已完成，工作目录是 /safe/repo。' }] }] }));
+    return;
+  }
   if (testMode === 'json-call') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
@@ -110,8 +131,10 @@ try {
   assert.equal(quality.body.reasoning_effort, 'xhigh');
   const fastWithoutHeader = await send('qwen3.5-codex-fast-16k', 'none', null);
   assert.equal(fastWithoutHeader.body.model, 'qwen3.5-codex-fast-16k');
+  assert.equal(counted.length, 0, 'Non-Metal requests must not get the 8k context restriction.');
 
   const metal = await send('qwen3.5-codex-metal-8k', 'medium', null);
+  assert.equal(counted.length, 1);
   assert.equal(metal.body.reasoning.effort, 'none');
   assert.match(metal.body.input[0].content[0].text, /Combine independent read-only shell checks/);
   assert.match(metal.body.input[0].content[0].text, /never repeat a completed check/);
@@ -280,7 +303,57 @@ try {
   assert.equal(streamHistoryIncoming.input[2].type, 'function_call');
   assert.equal(streamHistoryIncoming.input[3].type, 'function_call_output');
 
-  console.log('PASS: model routing, reasoning, namespace/App/CUA bridge, history, images, credentials, and streaming output translation.');
+  const latestRequest = '继续修复本地和云端模型切换。';
+  const longInput = [
+    { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Permissions: never write outside /safe/repo without approval.' }] },
+    ...Array.from({ length: 30 }, (_, index) => ({ type: 'message', role: index % 2 ? 'assistant' : 'user', content: [{ type: index % 2 ? 'output_text' : 'input_text', text: `Old message ${index}. ` + 'old history '.repeat(500) }] })),
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context><cwd>/safe/repo</cwd></environment_context>' }] },
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: latestRequest }] },
+    { type: 'function_call', call_id: 'last_command', name: 'exec_command', arguments: '{"cmd":"pwd"}' },
+    { type: 'function_call_output', call_id: 'last_command', output: '/safe/repo' },
+  ];
+  const budgetResponse = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'qwen3.5-codex-metal-8k', input: longInput,
+      instructions: '<permissions instructions>Request approval for external writes.</permissions instructions>',
+      tools: [{ type: 'function', name: 'exec_command', description: 'Shell tool. '.repeat(10_000), parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } }],
+    }),
+  });
+  assert.equal(budgetResponse.status, 200);
+  await budgetResponse.json();
+  const limitedIncoming = incoming.at(-1).body;
+  assert.ok(limitedIncoming.input.some((item) => item.content?.some((part) => part.text === latestRequest)));
+  assert.match(limitedIncoming.input[0].content[0].text, /never write outside \/safe\/repo/);
+  assert.match(limitedIncoming.input[0].content[0].text, /Request approval for external writes/);
+  assert.ok(limitedIncoming.input.some((item) => item.content?.some((part) => /Do not claim to remember omitted history/.test(part.text))));
+  assert.ok(limitedIncoming.input.some((item) => item.type === 'function_call' && item.call_id === 'last_command'));
+  assert.ok(limitedIncoming.input.some((item) => item.type === 'function_call_output' && item.call_id === 'last_command'));
+  assert.ok(Math.ceil(JSON.stringify({ input: limitedIncoming.input, tools: limitedIncoming.tools }).length / 3) <= 7040);
+
+  const countBeforeError = incoming.length;
+  const tooLargeResponse = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'qwen3.5-codex-metal-8k', input: 'This latest request cannot be truncated. '.repeat(3000) }),
+  });
+  assert.equal(tooLargeResponse.status, 400);
+  const contextError = await tooLargeResponse.json();
+  assert.equal(contextError.error.type, 'local_context_limit');
+  assert.match(contextError.error.message, /user message was not truncated/);
+  assert.equal(incoming.length, countBeforeError, 'An oversized user request must not start inference or fall back to cloud.');
+
+  const compact = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses/compact`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-test-mode': 'compact' },
+    body: JSON.stringify({ model: 'qwen3.5-codex-metal-8k', input: longInput, stream: true }),
+  });
+  assert.equal(compact.status, 200);
+  const compactPayload = await compact.json();
+  assert.equal(compactPayload.object, 'response.compaction');
+  assert.ok(compactPayload.output.some((item) => item.role === 'user' && item.content[0].text === latestRequest));
+  assert.ok(compactPayload.output.some((item) => item.role === 'developer' && /Permissions/.test(item.content[0].text)));
+  assert.ok(compactPayload.output.some((item) => item.role === 'assistant' && /only the visible recent context/.test(item.content[0].text)));
+  assert.ok(compactPayload.output.some((item) => /上次检查已完成/.test(item.content[0].text)));
+
+  console.log('PASS: model routing, reasoning, namespace/App/CUA bridge, history, images, credentials, streaming, local token budget and local compaction.');
 } finally {
   await new Promise((resolve) => adapter.close(resolve));
   await new Promise((resolve) => upstream.close(resolve));

@@ -94,15 +94,29 @@ npm run test:strata-context
 
 **English** | [简体中文](README.zh-CN.md)
 
-Add models that are **already installed in Ollama** to the Codex/ChatGPT desktop
-app without removing your existing cloud models. Each Codex task can select a
-local or cloud model independently while continuing to use the Codex harness,
-Skills, Apps, MCP, Browser, Computer Use, shell, file editing, sandbox, and
-approval system.
+Use models already installed in Ollama with Codex. On macOS, local models
+run in an independent Codex terminal with separate settings and sessions.
+The Codex desktop app uses its native cloud connection and model list.
+Windows provides the desktop model picker integration described below.
 
 > The default setup path never downloads a model, creates a model alias, or
 > changes Ollama context/KV-cache settings. You choose and install the models;
 > OllamaForge only connects them safely and provides configuration rollback.
+
+## Intel Mac with Radeon Metal
+
+With the patched LeetTutor AMD Metal `llama-server` and existing Qwen 3.5 9B
+weights, run:
+
+```sh
+npm run deploy:macos-metal
+npm run install:macos-metal-shortcuts
+```
+
+`本地 Codex.command` opens an independent Metal Codex terminal. The local
+adapter keeps an 8K context and stops the dedicated Radeon process after five
+idle minutes. `云端 Codex.command` opens the desktop app and removes recognized
+legacy Ollama routing overrides if necessary.
 
 ## Supported platforms
 
@@ -199,10 +213,10 @@ task in the Codex model picker:
 
 | Command | Behavior | Downloads a model |
 | --- | --- | --- |
-| `npm run setup` | Connect installed models and install a shortcut | No |
+| `npm run setup` | Install a shortcut for already installed models | No |
 | `npm run models` | List local models without modifying configuration | No |
-| `npm run refresh` | Refresh the Codex catalog after adding/removing models | No |
-| `npm run launch` | Refresh the catalog and restart Codex | No |
+| `npm run refresh` | Refresh local model discovery and the shortcut | No |
+| `npm run launch` | Open local Codex on macOS or refresh desktop Codex on Windows | No |
 | `npm run disconnect` | Restore the pre-connection configuration without deleting weights | No |
 | `npm test` | Run cross-platform offline tests | No |
 | `npm run test:live -- <model-name>` | Test real text and tool calls | No |
@@ -212,26 +226,22 @@ are safe aliases of `npm run setup`; neither downloads a model.
 
 ## macOS
 
-`npm run setup` creates this desktop shortcut:
-
-```text
-本地 Codex（Ollama 直连）.command
-```
-
-Double-clicking it checks Ollama, refreshes the model catalog, quits Codex, and
-opens it again. It is not a local-only mode: both local and cloud models remain
-in the model picker after restart.
-
-If `qwen3.8:27b-mlx` is already installed on Apple Silicon, reuse those weights
-directly:
+Run `npm run setup` to create `本地 Codex（Ollama 直连）.command`, or select
+an already installed model explicitly:
 
 ```sh
-npm run setup -- --model qwen3.8:27b-mlx
+npm run setup -- --model qwen3.5-codex-fast-16k
 ```
 
-For this known model, OllamaForge marks the Codex catalog context as 184,320 and
-sets the default reasoning level to `none`. It does not change the actual Ollama
-runtime parameters.
+Double-click the shortcut to launch an independent Codex terminal. It starts
+Ollama if needed, checks the installed model, and connects to its local
+Responses API. Use `npm run launch` for the same terminal from the shell.
+
+If Ollama previously took over the desktop provider, run
+`npm run disconnect`. This backs up and removes known integration overrides
+while retaining the desktop settings and chat history. Reopen the desktop
+app once the active tasks finish. Keep Ollama's separate ChatGPT/Codex desktop
+integration off. Cloud models refresh through the native desktop app.
 
 ## Windows
 
@@ -252,8 +262,7 @@ restarts Codex. The complete log is stored at:
 %LOCALAPPDATA%\OllamaForge\shortcut.log
 ```
 
-Windows and macOS use the same hybrid catalog logic. Adding local models does
-not remove cloud models.
+Windows uses the hybrid catalog described in this section.
 
 ## Qwen3.8 27B guidance
 

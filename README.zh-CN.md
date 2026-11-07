@@ -79,10 +79,9 @@ npm run test:strata-context
 
 [English](README.md) | **简体中文**
 
-把**已经安装在本机 Ollama 中的模型**加入 Codex/ChatGPT 桌面端，同时保留
-原有云端模型。每个 Codex 任务都可以在模型选择器中独立选择本地或云端模型，
-并继续使用 Codex Harness、Skills、Apps、MCP、Browser、Computer Use、Shell、
-文件编辑、沙箱和审批。
+在 Codex 中使用已经安装的 Ollama 模型。macOS 的本地模型使用独立的
+Codex 终端，配置与会话单独存放。Codex 桌面继续使用原生云端连接与模型列表。
+Windows 的桌面模型选择器集成见下文。
 
 > 默认安装路径永远不会下载模型、创建模型别名或修改 Ollama 的上下文/KV
 > cache。模型由用户自己选择并安装，OllamaForge 只负责安全连接和配置回滚。
@@ -178,7 +177,7 @@ npm run setup -- --model qwen3.8:27b-mlx
 | `npm run setup` | 首次连接现有模型并安装快捷方式 | 否 |
 | `npm run models` | 只列出本地模型，不修改配置 | 否 |
 | `npm run refresh` | 模型安装/删除后刷新 Codex 目录 | 否 |
-| `npm run launch` | 刷新目录并重启 Codex | 否 |
+| `npm run launch` | macOS 打开本地终端，Windows 刷新桌面 Codex | 否 |
 | `npm run disconnect` | 恢复连接前配置，不删除权重 | 否 |
 | `npm test` | 跨平台离线测试 | 否 |
 | `npm run test:live -- <模型名>` | 真实文本与工具调用验收 | 否 |
@@ -188,23 +187,33 @@ npm run setup -- --model qwen3.8:27b-mlx
 
 ## macOS
 
-`npm run setup` 会在桌面创建：
-
-```text
-本地 Codex（Ollama 直连）.command
-```
-
-双击它会确认 Ollama、刷新模型目录、关闭并重新打开 Codex。它不是“只能使用
-本地模型”的开关；重启后本地和云端模型仍同时出现在模型选择器中。
-
-Apple Silicon 上已经安装 `qwen3.8:27b-mlx` 时，可直接复用同一份权重：
+执行 `npm run setup`，会生成「本地 Codex（Ollama 直连）.command」。
+也可以指定已经安装的模型：
 
 ```sh
-npm run setup -- --model qwen3.8:27b-mlx
+npm run setup -- --model qwen3.5-codex-fast-16k
 ```
 
-仓库会把该已知模型在 Codex 目录中的上下文标记为 184,320，并把默认
-Reasoning 设为 `none`；不会更改 Ollama 服务的真实运行参数。
+双击快捷方式打开独立 Codex 终端。它会按需启动 Ollama，检查模型是否已安装，
+然后连接本地 Responses API。在终端里可用 `npm run launch` 启动同一入口。
+
+如果旧版 Ollama 集成已经接管 Codex 桌面，执行 `npm run disconnect`。
+它会备份配置并清理已知的集成覆盖项，保留桌面设置和会话历史。
+等正在运行的任务结束后，退出并重开桌面 Codex。Ollama 自带的 Codex 桌面集成
+保持关闭，桌面云端模型由 Codex 原生刷新。
+
+### Intel Mac 与 Radeon Metal
+
+已安装 LeetTutor 的 AMD Metal llama-server 和 Qwen 3.5 9B 权重时，执行：
+
+```sh
+npm run deploy:macos-metal
+npm run install:macos-metal-shortcuts
+```
+
+「本地 Codex.command」打开独立的 Metal 终端。适配器使用 8K 上下文，
+显卡进程空闲五分钟后退出。「云端 Codex.command」恢复已知的旧版 Ollama 路由，
+然后打开桌面 Codex。
 
 ## Windows
 
@@ -224,7 +233,7 @@ npm run setup
 %LOCALAPPDATA%\OllamaForge\shortcut.log
 ```
 
-Windows 与 macOS 使用同一混合目录逻辑：云端模型不会因为加入本地模型而消失。
+Windows 使用本节所述的混合目录。
 
 ## Qwen3.8 27B 建议
 

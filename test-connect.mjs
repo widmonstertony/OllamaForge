@@ -140,6 +140,38 @@ try {
   const mergedModels = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
   assert.deepEqual(mergedModels.map((entry) => entry.slug), ['gpt-new', 'qwen3.5:9b']);
   assert.equal(mergedModels[1].display_name, 'qwen3.5:9b');
+
+  const macCatalog = path.join(configDir, 'ollama-launch-models.json');
+  const macConfig = `model = "gpt-cloud"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\n` +
+    `model_catalog_json = ${JSON.stringify(macCatalog)}\n\n[features]\napps = true\n`;
+  fs.writeFileSync(configPath, macConfig);
+  const macDependencies = {
+    platform: 'darwin', homeDir: work, environment: { CODEX_HOME: configDir },
+    ollamaExecutable: 'ollama', codexExecutable: 'codex',
+    runCommand: () => { throw new Error('Cloud repair cannot invoke Ollama or Codex'); },
+  };
+  const restored = connect({ disconnect: true, dependencies: macDependencies });
+  assert.equal(restored.changed, true);
+  assert.equal(fs.readFileSync(restored.backup, 'utf8'), macConfig);
+  const nativeConfig = 'model = "gpt-cloud"\n\n[features]\napps = true\n';
+  assert.equal(fs.readFileSync(configPath, 'utf8'), nativeConfig);
+  assert.equal(connect({ disconnect: true, dependencies: macDependencies }).changed, false);
+
+  const localCalls = [];
+  const macLocal = connect({ launch: true, noShortcut: true, dependencies: {
+    ...macDependencies,
+    runCommand(command, args, { env }) {
+      localCalls.push({ command, args, env });
+      return { stdout: 'NAME ID SIZE MODIFIED\nqwen3.5-codex-fast-16k:latest abc 6 GB now\n' };
+    },
+  } });
+  assert.equal(macLocal.launched, true);
+  assert.deepEqual(localCalls.map(call => call.command), ['ollama', 'codex']);
+  const localLaunch = localCalls[1];
+  assert.equal(localLaunch.args[1], 'qwen3.5-codex-fast-16k:latest');
+  assert.ok(localLaunch.args.some(arg => arg.includes('http://127.0.0.1:11434/v1')));
+  assert.notEqual(localLaunch.env.CODEX_HOME, configDir);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), nativeConfig);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

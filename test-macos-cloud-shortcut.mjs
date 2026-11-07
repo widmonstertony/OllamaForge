@@ -22,12 +22,9 @@ try {
   if (process.platform !== 'win32') assert.equal(fs.statSync(shortcut).mode & 0o777, 0o755);
   assert.match(content, /^#!\/bin\/zsh\n/);
   assert.match(content, /'\/opt\/node with spaces\/bin\/node'/);
-  assert.match(content, /'[^'\n]*repo with spaces[\\/]macos[\\/]local-codex\.mjs'; then/);
-  assert.match(content, /tell application "Codex" to quit/);
-  assert.match(content, /open -a 'Codex'/);
-  assert.match(content, /恢复云端默认，并保留 Ollama 本地模型/);
-  assert.match(content, /正在运行的 Codex 任务会被中断/);
-  console.log('PASS: macOS cloud-default plus local-model shortcut installation.');
+  assert.match(content, /macos[\\/]local-codex\.mjs' --open/);
+  assert.doesNotMatch(content, /osascript|to quit|ollama launch/);
+  console.log('PASS: macOS native cloud shortcut opens without a forced restart.');
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
 }

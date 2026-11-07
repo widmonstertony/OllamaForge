@@ -143,7 +143,7 @@ function createHarness({
     installed,
     calls,
     dependencies: {
-      platform: 'darwin',
+      platform: 'win32',
       environment: { CODEX_HOME: configDir },
       homeDir,
       rootDir: repositoryFixture,
@@ -159,6 +159,18 @@ function createHarness({
 
 function cleanup(harness) {
   fs.rmSync(harness.work, { recursive: true, force: true });
+}
+
+{
+  const harness = createHarness({ installedModels: ['qwen3.5:9b'] });
+  try {
+    const before = fs.readFileSync(harness.configPath, 'utf8');
+    const result = runSetup({ model: '9b' }, { ...harness.dependencies, platform: 'darwin' });
+    assert.equal(result.aliasOnly, true);
+    assert.ok(harness.installed.has('qwen3.5-codex-fast-16k'));
+    assert.equal(fs.readFileSync(harness.configPath, 'utf8'), before);
+    assert.ok(!harness.calls.some(call => call[1] === 'launch'));
+  } finally { cleanup(harness); }
 }
 
 {
