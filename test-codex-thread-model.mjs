@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { updateThreadModel } from './codex-thread-model.mjs';
 
-const threadId = '01a0cb5a-d9a8-7ea1-9fa3-2ef071db74af';
+const threadId = '00000000-0000-4000-8000-000000000001';
 const model = 'gpt-6.1-sol';
 const effort = 'xhigh';
 
