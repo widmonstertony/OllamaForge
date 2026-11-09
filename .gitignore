@@ -36,6 +36,8 @@
 !test-desktop-smoke.mjs
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
+!deepseek-local-tools.mjs
+!deepseek-restart-guard.mjs
 !strata-assistants.mjs
 !codex-app-server.mjs
 !repair-codex-thread.mjs
@@ -99,6 +101,7 @@ macos/*
 !macos/install-direct-shortcut.mjs
 !macos/metal-codex.mjs
 !macos/native-codex.mjs
+!macos/ollama-harness.mjs
 !macos/install-metal-shortcuts.mjs
 !test-macos-metal.mjs
 !.github/

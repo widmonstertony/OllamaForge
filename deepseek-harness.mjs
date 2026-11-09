@@ -24,15 +24,46 @@ export function parseHarnessArgs(args) {
     const key = args[i];
     if (key === '--no-open') { options.noOpen = true; continue; }
     if (key === '--apply' && options.command === 'repair-workspace') { options.apply = true; continue; }
-    if (!['--base-url', '--model', '--context', '--api', '--port', '--workspace'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
+    if (!['--base-url', '--model', '--context', '--extra-model', '--extra-context', '--tool-profile', '--api', '--port', '--workspace'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
     options[key.slice(2)] = args[++i];
   }
   options.port = Number(options.port);
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) throw new Error('Port must be 1024..65535.');
-  if (options.context != null && (!Number.isInteger(Number(options.context)) || Number(options.context) < 4096)) throw new Error('Context must be an integer >=4096.');
+  for (const key of ['context', 'extra-context']) {
+    if (options[key] != null && (!Number.isInteger(Number(options[key])) || Number(options[key]) < 4096)) throw new Error('Context must be an integer >=4096.');
+  }
+  if ((options['extra-model'] != null || options['extra-context'] != null) &&
+      (!options['base-url'] || !options['extra-model'] || !options['extra-context'])) {
+    throw new Error('An extra model requires --base-url, --extra-model and --extra-context.');
+  }
+  if (options['tool-profile'] && options['tool-profile'] !== 'local-controls') throw new Error('Unsupported tool profile.');
   if (options.api && !['openai-responses', 'openai-completions'].includes(options.api)) throw new Error('Unsupported API protocol.');
   if (options['base-url']) validateLocalURL(options['base-url']);
   return options;
+}
+
+/** Preserve a configured connection on ordinary launch/test invocations. */
+export function resolveHarnessOptions(options, saved = {}, explicitPort = false) {
+  const changingConnection = ['base-url', 'model', 'context', 'api', 'extra-model', 'extra-context']
+    .some(key => options[key] != null);
+  const previous = {};
+  if (!changingConnection && saved.baseURL) {
+    Object.assign(previous, {
+      'base-url': saved.baseURL, model: saved.model, context: saved.contextWindow, api: saved.api,
+    });
+    const extra = saved.additionalModels?.[0];
+    if (extra) Object.assign(previous, { 'extra-model': extra.model, 'extra-context': extra.contextWindow });
+  }
+  if (saved.toolProfile) previous['tool-profile'] = saved.toolProfile;
+  if (saved.workspace) previous.workspace = saved.workspace;
+  const resolved = { ...previous, ...options };
+  if (!explicitPort && saved.port != null) resolved.port = saved.port;
+  return resolved;
+}
+
+export function savedHarnessOptions(options, explicitPort = false) {
+  const saved = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) : {};
+  return resolveHarnessOptions(options, saved, explicitPort);
 }
 
 export function validateLocalURL(value) {
@@ -66,7 +97,14 @@ export async function discoverConnection(options, read = json) {
     const baseURL = validateLocalURL(options['base-url']);
     const listed = await read(`${baseURL}/models`);
     if (!listed.data?.some(item => item.id === options.model)) throw new Error('Selected model is not listed by this endpoint.');
-    return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? 'openai-responses' };
+    const additionalModels = [];
+    if (options['extra-model']) {
+      if (!listed.data?.some(item => item.id === options['extra-model'])) throw new Error('Extra model is not listed by this endpoint.');
+      if (options['extra-model'] === options.model) throw new Error('Extra model must differ from the default model.');
+      additionalModels.push({ model: options['extra-model'], contextWindow: Number(options['extra-context']) });
+    }
+    return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? 'openai-responses',
+      ...(additionalModels.length ? { additionalModels } : {}) };
   }
   let strata;
   try { strata = await read('http://127.0.0.1:8080/health'); } catch { }
@@ -81,26 +119,29 @@ export async function discoverConnection(options, read = json) {
 
 export function buildHarnessPatch(connection) {
   validateLocalURL(connection.baseURL);
+  const models = [connection, ...(connection.additionalModels ?? [])];
+  const controls = connection.toolProfile === 'local-controls' ? [{ id: 'ollamaforge-local-controls', name: pathToFileURL(path.join(ROOT, 'deepseek-local-tools.mjs')).href }] : [];
   return [
     { id: 'llm-pi-ai', config: { providers: { 'ollamaforge-local': {
       displayName: 'OllamaForge Local', apiKeyEnv: LOCAL_KEY, api: connection.api,
       ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoning: 'off' } : {}),
       baseURL: connection.baseURL, streamIdleTimeoutMs: 600000,
       retryPolicy: { mode: 'normal', maxRetries: 1 },
-      models: [{ id: connection.model, name: `${connection.model} (local)`, contextWindow: connection.contextWindow,
-        maxTokens: Math.min(8192, Math.floor(connection.contextWindow / 4)), input: connection.images ? ['text', 'image'] : ['text'],
-        reasoningEfforts: connection.baseURL === 'http://127.0.0.1:8080/v1' ? { off: 'none', high: 'high' } : false }],
+      models: models.map(model => ({ id: model.model, name: `${model.model} (local)`, contextWindow: model.contextWindow,
+        maxTokens: Math.min(8192, Math.floor(model.contextWindow / 4)), input: connection.images ? ['text', 'image'] : ['text'],
+        reasoningEfforts: connection.baseURL === 'http://127.0.0.1:8080/v1' ? { off: 'none', high: 'high' } : false })),
     } } } },
     { id: 'agent-default-model', config: { provider: 'ollamaforge-local', model: connection.model,
       ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoningEffort: 'off' } : {}) } },
     { insert: [
+      ...controls,
       { id: 'ollamaforge-computer-use', name: '@deepseek-ai/dsh-computer-use' },
       { id: 'ollamaforge-computer-driver', name: pathToFileURL(path.join(ROOT, 'deepseek-native-provider.mjs')).href },
       { id: 'ollamaforge-browser-use', name: '@deepseek-ai/dsh-browser-use' },
       { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
     ] },
     { id: 'compaction-basic', name: pathToFileURL(path.join(ROOT, 'deepseek-compaction.mjs')).href, config: {
-      modelPolicies: [{ provider: 'ollamaforge-local', model: connection.model, ...localCompactionPolicy(connection.contextWindow) }],
+      modelPolicies: models.map(model => ({ provider: 'ollamaforge-local', model: model.model, ...localCompactionPolicy(model.contextWindow) })),
     } },
   ];
 }
@@ -148,6 +189,7 @@ export function withDefaultHarnessLocale(rows = []) {
 
 export async function connectHarness(options) {
   const connection = await discoverConnection(options);
+  if (options['tool-profile']) connection.toolProfile = options['tool-profile'];
   ensureInstalled();
   fs.mkdirSync(HOME, { recursive: true });
   const previous = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
@@ -158,10 +200,12 @@ export async function connectHarness(options) {
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-native-provider.mjs')))
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-compaction.mjs')))
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-migrate-session.mjs')))
-    .update(fs.readFileSync(path.join(ROOT, 'deepseek-workspace.mjs'))).digest('hex');
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-workspace.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-local-tools.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-restart-guard.mjs'))).digest('hex');
   const settings = JSON.stringify({ ...connection, port: options.port, workspace, sourceHash }, null, 2) + '\n';
   if ((fs.existsSync(PATCH) && fs.readFileSync(PATCH, 'utf8') !== patch) ||
-      (fs.existsSync(SETTINGS) && fs.readFileSync(SETTINGS, 'utf8') !== settings)) stopHarness();
+      (fs.existsSync(SETTINGS) && fs.readFileSync(SETTINGS, 'utf8') !== settings)) await stopHarness({ onlyIfIdle: true });
   fs.writeFileSync(PATCH, patch);
   fs.writeFileSync(SETTINGS, settings);
   const require = createRequire(path.join(RUNTIME, 'package.json'));
@@ -191,6 +235,10 @@ export async function connectHarness(options) {
     const guards = [
       { id, inject: [dependency, 'ollamaforgeNativeReady'] },
     ];
+    if (profile === 'web') {
+      guards[0].inject.push('ollamaforgeRestartGuardReady');
+      guards.push({ insert: [{ id: 'ollamaforge-restart-guard', name: pathToFileURL(path.join(ROOT, 'deepseek-restart-guard.mjs')).href }] });
+    }
     if (profile === 'web') guards.push({ insert: [{ id: 'ollamaforge-workspace', name: pathToFileURL(path.join(ROOT, 'deepseek-workspace.mjs')).href, config: { directory: workspace } }] }, ...presets);
     const migration = path.join(RUNTIME, 'migration-request.json');
     if (profile === 'web' && fs.existsSync(migration)) {
@@ -268,11 +316,46 @@ function ownedUnixProcess() {
   return pid;
 }
 
-export function stopHarness() {
+async function prepareIdleRestart(pid) {
+  const settings = JSON.parse(fs.readFileSync(SETTINGS, 'utf8'));
+  if (pid == null) {
+    try {
+      const probe = await fetch('http://127.0.0.1:' + settings.port, { signal: AbortSignal.timeout(2000) });
+      await probe.body?.cancel();
+    } catch (error) {
+      if (error.cause?.code === 'ECONNREFUSED') return;
+      throw new Error('Cannot verify whether Harness is idle; retry after its tasks finish.', { cause: error });
+    }
+  }
+  const keyFile = path.join(RUNTIME, 'restart.key');
+  if (!fs.existsSync(keyFile)) throw new Error('The running Harness predates safe restart checks. Stop it explicitly after its tasks finish, then launch again.');
+  const response = await fetch('http://127.0.0.1:' + settings.port + '/ollamaforge/prepare-restart', {
+    method: 'POST', headers: {
+      authorization: 'Bearer ' + fs.readFileSync(keyFile, 'utf8'),
+      ...(pid == null ? {} : { 'x-ollamaforge-parent-pid': String(pid) }),
+    },
+    signal: AbortSignal.timeout(3000),
+  });
+  if (response.status === 409) throw new Error('Harness has a running task. Configuration was preserved; retry after it finishes.');
+  if (!response.ok) throw new Error('Could not reserve an idle Harness restart. Stop it explicitly after its tasks finish.');
+  const reserved = await response.json();
+  if (pid != null && reserved.parentPid !== pid) throw new Error('Harness restart reservation belongs to another process.');
+}
+
+export async function stopHarness({ onlyIfIdle = false } = {}) {
+  const pid = process.platform === 'win32' ? null : ownedUnixProcess();
+  if (onlyIfIdle && (pid || process.platform === 'win32')) await prepareIdleRestart(pid);
   if (process.platform === 'win32') windowsBackground(['-Stop']);
   else {
-    const pid = ownedUnixProcess();
-    if (pid) process.kill(-pid, 'SIGTERM');
+    if (!pid) return;
+    process.kill(-pid, 'SIGTERM');
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      const state = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' });
+      if (state.status !== 0 || state.stdout.trim().startsWith('Z')) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('Harness has not exited yet; configuration was preserved. Retry once it finishes shutting down.');
   }
 }
 
@@ -334,7 +417,9 @@ export function auditControlEvents(events, id, receipts) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const options = parseHarnessArgs(process.argv.slice(2));
+    const parsed = parseHarnessArgs(process.argv.slice(2));
+    const options = ['connect', 'launch', 'test'].includes(parsed.command)
+      ? savedHarnessOptions(parsed, process.argv.includes('--port')) : parsed;
     if (options.command === 'repair-workspace') {
       if (process.platform !== 'win32') throw new Error('The directory-permission repair is for Windows only.');
       const saved = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
@@ -342,7 +427,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       windowsScript('Repair-DeepSeekWorkspace.ps1', ['-Path', workspace, ...(options.apply ? ['-Apply'] : []), '-BackupDirectory', path.join(RUNTIME, 'recovery', 'workspace-permissions')]);
     } else if (options.command === 'serve') serveHarness();
     else if (options.command === 'stop') {
-      stopHarness();
+      await stopHarness();
     } else {
       await connectHarness(options);
       if (options.command === 'launch') await launchHarness(options);

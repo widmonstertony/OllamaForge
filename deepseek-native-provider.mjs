@@ -9,6 +9,13 @@ export const inject = ['computerUse', 'tools', 'systemPrompt', 'browserUse'];
 // require its exact per-snapshot handles; never invent handles from indices.
 export function projectNativeResult(result) {
   const state = result.structuredContent;
+  if (Array.isArray(state?.windows)) {
+    const windows = state.windows.slice(0, 80).map(({ app_name, title, pid, window_id, is_on_screen }) =>
+      ({ app_name, title, pid, window_id, is_on_screen }));
+    return { ...result, content: [...(result.content ?? []), { type: 'text', text:
+      'Native windows (match the intended title and pass its pid and window_id to get_window_state):\n' +
+      JSON.stringify({ total: state.windows.length, windows }) }] };
+  }
   if (!state?.snapshot_id || !Array.isArray(state.elements)) return result;
   const elements = state.elements.slice(0, 120).map(element => Object.fromEntries(
     ['element_index', 'element_token', 'role', 'label', 'value', 'frame', 'actions', 'enabled']

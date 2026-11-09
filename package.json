@@ -47,7 +47,9 @@
     "deploy:macos-hybrid": "node macos/metal-codex.mjs hybrid",
     "restore:macos-metal": "node macos/metal-codex.mjs cloud",
     "install:macos-metal-shortcuts": "node macos/install-metal-shortcuts.mjs",
-    "test:live": "node test-live-ollama.mjs"
+    "test:live": "node test-live-ollama.mjs",
+    "setup:macos-harness": "node macos/ollama-harness.mjs setup",
+    "launch:macos-harness": "node macos/ollama-harness.mjs launch"
   },
   "engines": {
     "node": ">=24.22.1 <25 || >=26.12.1 <27"
