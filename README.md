@@ -19,12 +19,69 @@ npm run models
 npm run local:codex
 ~~~
 
-Setup writes only ollamaforge-local.config.toml and ollamaforge-local-models.json
+On Windows/Linux, setup writes only ollamaforge-local.config.toml and ollamaforge-local-models.json
 beside your Codex configuration. The local CLI uses that profile for its own
 process; the desktop cloud app continues using native discovery and transport.
 It does not download models, copy cloud auth, pin a cloud catalog, or restart Codex.
 The desktop shortcut opens the native app without closing any running chat.
 An explicit local choice is supported with npm run setup -- --model <installed-name>.
+
+## macOS local launchers
+
+On macOS, npm run setup and npm run launch retain the independent terminal
+launcher and isolated CODEX_HOME. The local:codex profile command above is for
+Windows/Linux. Native desktop cloud configuration remains independent.
+
+### macOS
+
+On Apple Silicon with Qwen 3.8 27B already installed, configure Harness with
+Chrome and native desktop control:
+
+```sh
+npm run setup:macos-harness
+npm run launch:macos-harness
+```
+
+Setup reuses existing weights to create 128K and 64K aliases, defaults to 128K,
+and installs a desktop shortcut. It starts Ollama when needed and uses the
+isolated Harness configuration. The model picker also offers 64K. A focused
+catalog retains file, terminal, browser and native desktop tools with less
+prompt overhead. Native control requires macOS accessibility and screen
+capture permissions. Local validation used 64GB unified memory. The 128K test
+recalled a marker from 68,050 input tokens; it did not fill the whole window.
+
+Run `npm run setup` to create `本地 Codex（Ollama 直连）.command`, or select
+an already installed model explicitly:
+
+```sh
+npm run setup -- --model qwen3.5-codex-fast-16k
+```
+
+Double-click the shortcut to launch an independent Codex terminal. It starts
+Ollama if needed, checks the installed model, and connects to its local
+Responses API. Use `npm run launch` for the same terminal from the shell.
+
+If Ollama previously took over the desktop provider, run
+`npm run disconnect`. This backs up and removes known integration overrides
+while retaining the desktop settings and chat history. Reopen the desktop
+app once the active tasks finish. Keep Ollama's separate ChatGPT/Codex desktop
+integration off. Cloud models refresh through the native desktop app.
+
+
+## Intel Mac with Radeon Metal
+
+With the patched LeetTutor AMD Metal `llama-server` and existing Qwen 3.5 9B
+weights, run:
+
+```sh
+npm run deploy:macos-metal
+npm run install:macos-metal-shortcuts
+```
+
+`本地 Codex.command` opens an independent Metal Codex terminal. The local
+adapter keeps an 8K context and stops the dedicated Radeon process after five
+idle minutes. `云端 Codex.command` opens the desktop app and removes recognized
+legacy Ollama routing overrides if necessary.
 
 ## Repair older global integration
 
@@ -199,7 +256,7 @@ npm run stop:deepseek
 Harness to read a random file, write a new file and reply with the marker.
 `test:deepseek-controls` opens a disposable local page and verifies native
 click/typing and Chrome fill/click using separate server receipts plus tool
-events. It needs an unlocked, visible Windows desktop. Ordinary `npm test` runs
+events. It needs an unlocked, visible macOS or Windows desktop. Ordinary `npm test` runs
 offline policy tests, not desktop actions or runtime installation.
 
 To select another local endpoint, name its installed model and actual context:
@@ -208,10 +265,17 @@ To select another local endpoint, name its installed model and actual context:
 npm run launch:deepseek -- --base-url http://127.0.0.1:8080/v1 --model qwen3.8-flash-next-iq3_s --context 131072 --api openai-responses
 ```
 
+To offer another model already installed at that endpoint, add
+`--extra-model <model> --extra-context <capacity>`. Each model receives its own
+context and compaction policy. `--model` remains the default for new chats.
+Selecting either model in the picker does not require restarting Harness.
+
 Use `--port 3081` if 3080 belongs to another app, or `--no-open` to keep the Web UI
-in the background. Changing the connection stops only this checkout's owned
-Harness Web process; run `launch:deepseek` to reopen it. Windows and Unix stop
-paths verify ownership before stopping processes.
+in the background. Configuration changes reserve an idle runtime before restarting
+this checkout's owned Harness Web process. Running tasks block the restart.
+Windows and Unix stop paths verify ownership before stopping processes.
+For the first upgrade of an older server, wait for its tasks to finish, run
+`npm run stop:deepseek`, then relaunch to load the restart guard.
 
 Computer control uses Harness's own native driver, not Codex's private plugin,
 permissions or browser connection. Chrome uses a separate, visible Chromium

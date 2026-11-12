@@ -17,11 +17,60 @@ npm run models
 npm run local:codex
 ~~~
 
-setup 只在 Codex 配置目录旁生成 ollamaforge-local.config.toml 和
+Windows/Linux 的 setup 只在 Codex 配置目录旁生成 ollamaforge-local.config.toml 和
 ollamaforge-local-models.json。本地 CLI 仅对自己的进程使用该配置；
 桌面云端继续使用 Codex 原生目录与连接，不下载模型、不复制云端认证、
 不固定云端名单、不重启 Codex。桌面入口只打开原生应用，不关闭正在运行的对话。
 指定本地模型可运行 npm run setup -- --model <已安装名称>。
+
+## macOS 本地入口
+
+macOS 的 npm run setup 和 npm run launch 保留独立终端及隔离 CODEX_HOME 的入口。
+上面的 local:codex 专用配置命令用于 Windows/Linux，原生桌面云端配置保持独立。
+
+### macOS
+
+Apple Silicon 上已安装 Qwen 3.8 27B 时，可配置带 Chrome 与原生电脑控制的 Harness：
+
+```sh
+npm run setup:macos-harness
+npm run launch:macos-harness
+```
+
+配置会复用已有权重创建 128K 和 64K 别名，默认使用 128K，并生成桌面快捷方式。
+它按需启动 Ollama，使用独立 Harness 配置；64K 可在模型选择器中切换。
+文件、终端、浏览器和原生控制工具使用精简的目录，降低首轮提示开销。
+原生控制需要 macOS 辅助功能与屏幕捕捉权限；本机实测使用了 64GB 统一内存。
+128K 已用 68,050 输入 tokens 验证前文找回，未宣称填满整个窗口的质量表现。
+
+执行 `npm run setup`，会生成「本地 Codex（Ollama 直连）.command」。
+也可以指定已经安装的模型：
+
+```sh
+npm run setup -- --model qwen3.5-codex-fast-16k
+```
+
+双击快捷方式打开独立 Codex 终端。它会按需启动 Ollama，检查模型是否已安装，
+然后连接本地 Responses API。在终端里可用 `npm run launch` 启动同一入口。
+
+如果旧版 Ollama 集成已经接管 Codex 桌面，执行 `npm run disconnect`。
+它会备份配置并清理已知的集成覆盖项，保留桌面设置和会话历史。
+等正在运行的任务结束后，退出并重开桌面 Codex。Ollama 自带的 Codex 桌面集成
+保持关闭，桌面云端模型由 Codex 原生刷新。
+
+### Intel Mac 与 Radeon Metal
+
+已安装 LeetTutor 的 AMD Metal llama-server 和 Qwen 3.5 9B 权重时，执行：
+
+```sh
+npm run deploy:macos-metal
+npm run install:macos-metal-shortcuts
+```
+
+「本地 Codex.command」打开独立的 Metal 终端。适配器使用 8K 上下文，
+显卡进程空闲五分钟后退出。「云端 Codex.command」恢复已知的旧版 Ollama 路由，
+然后打开桌面 Codex。
+
 
 ## 清理旧版全局接入
 
@@ -163,7 +212,7 @@ npm run stop:deepseek
 `connect:deepseek` 只配置连接；`test:deepseek` 让真正的 Harness 读取随机标记、
 写入新文件并回复标记。`test:deepseek-controls` 打开专属本地测试页面，通过
 独立的服务端回执和工具事件验证原生点击输入、Chrome 填写点击。
-需要 Windows 桌面可见且已解锁。普通 `npm test` 只验证离线策略，不安装运行包或操作桌面。
+需要 macOS 或 Windows 桌面可见且已解锁。普通 `npm test` 只验证离线策略，不安装运行包或操作桌面。
 
 指定其他本地接口时，需要填写已经安装的模型和真实上下文容量：
 
@@ -171,8 +220,14 @@ npm run stop:deepseek
 npm run launch:deepseek -- --base-url http://127.0.0.1:8080/v1 --model qwen3.8-flash-next-iq3_s --context 131072 --api openai-responses
 ```
 
+同一接口还有其他已安装模型时，可加 `--extra-model <模型名> --extra-context <上下文容量>`，
+把第二个模型加入选择器。两个模型各自使用对应的上下文和压缩策略，
+`--model` 仍是新对话的默认模型。切换模型本身不需要重启 Harness。
+
 3080 被其他应用占用时加 `--port 3081`；不打开浏览器时加 `--no-open`。
-修改连接会停止本仓库拥有的 Harness Web 进程，再运行 `launch:deepseek` 打开。
+修改连接前会检查运行中的任务；任务未结束时保留配置并拒绝自动重启。
+空闲重启会先阻止新任务进入，再停止本仓库拥有的 Web 进程。旧版服务第一次升级时，
+请等任务结束后执行 `npm run stop:deepseek`，然后重新启动以加载保护。
 Windows 和 Unix 的停止路径都会先检查进程归属。
 
 电脑控制使用 Harness 自己的原生驱动，不复用 Codex 的私有插件、权限或浏览器连接。

@@ -3,9 +3,9 @@ import path from 'node:path';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
-import { RUNTIME, connectHarness, runHarnessTask, auditControlEvents } from './deepseek-harness.mjs';
+import { RUNTIME, connectHarness, runHarnessTask, auditControlEvents, parseHarnessArgs, savedHarnessOptions } from './deepseek-harness.mjs';
 
-await connectHarness({ port: 3080 });
+await connectHarness(savedHarnessOptions(parseHarnessArgs(['test', ...process.argv.slice(2)]), process.argv.includes('--port')));
 const id = crypto.randomBytes(8).toString('hex');
 const title = `OllamaForge Harness Control ${id}`;
 const directory = path.join(RUNTIME, `controls-test-${id}`);
@@ -26,9 +26,9 @@ server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 try {
   const url = `http://127.0.0.1:${server.address().port}`;
-  const task = `Verify the installed computer driver and Chrome driver on this Windows PC using ONLY this disposable page.
+  const task = `Verify the installed computer driver and Chrome driver on this ${process.platform === 'darwin' ? 'Mac' : 'computer'} using ONLY this disposable page.
 1. Use Chrome DevTools tools to open ${url} in a new page. Its title is ${title}.
-2. Use cua_driver_native tools to list windows and find the exact Chrome window containing this title. Get a fresh window state. For this scoped Windows test use foreground delivery from the start. Click the Native marker input, type NATIVE_${id}, then click Verify Native. Refresh native window state and confirm PASS. Do not use browser tools, JavaScript, shell, or HTTP requests to fill or submit the Native marker. Use native click/type actions.
+2. Use cua_driver_native tools to list windows and find the exact Chrome window containing this title. Get a fresh window state with max_elements 45 and include_screenshot false. If the target is not in that bounded state, query its label. Use foreground delivery if required on this platform. Click the Native marker input, type NATIVE_${id}, then click Verify Native. Refresh native window state and confirm PASS. Do not use browser tools, JavaScript, shell, or HTTP requests to fill or submit the Native marker. Use native click/type actions.
 3. Use Chrome DevTools snapshot/fill/click tools to fill Chrome marker with CHROME_${id} and click Verify Chrome. Take another browser snapshot and confirm both show PASS. Do not use evaluate_script, shell, or HTTP requests to synthesize either result. Do not touch other apps, tabs, files or permission settings.
 4. Reply NATIVE_AND_CHROME_PASS only after both real actions succeed. If the desktop is locked or a permission is missing, report that failure and stop.`;
   const events = await runHarnessTask(task, directory);

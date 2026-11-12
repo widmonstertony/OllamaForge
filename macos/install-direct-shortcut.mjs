@@ -21,8 +21,9 @@ export function findCodexApplicationName() {
   return application.name;
 }
 
-export function buildDirectShortcut({ nodePath, connectorPath }) {
-  return `#!/bin/zsh\n${shellQuote(nodePath)} ${shellQuote(connectorPath)} --launch --no-shortcut\n`;
+export function buildDirectShortcut({ nodePath, connectorPath, model }) {
+  const selected = model ? ` --model ${shellQuote(model)}` : '';
+  return `#!/bin/zsh\nexec ${shellQuote(nodePath)} ${shellQuote(connectorPath)} --launch --no-shortcut${selected}\n`;
 }
 
 export function installDirectShortcut({
@@ -30,6 +31,7 @@ export function installDirectShortcut({
   nodePath = process.execPath,
   connectorPath = path.join(rootDir, 'connect.mjs'),
   applicationName = findCodexApplicationName(),
+  model,
 } = {}) {
   // Validate the app now so a broken shortcut is never installed.
   if (!applicationName) throw new Error('Codex application name is required.');
@@ -37,7 +39,7 @@ export function installDirectShortcut({
   fs.mkdirSync(desktopDir, { recursive: true });
   const shortcutPath = path.join(desktopDir, shortcutName);
   const temporaryPath = `${shortcutPath}.tmp-${process.pid}`;
-  fs.writeFileSync(temporaryPath, buildDirectShortcut({ nodePath, connectorPath }), { encoding: 'utf8', mode: 0o700 });
+  fs.writeFileSync(temporaryPath, buildDirectShortcut({ nodePath, connectorPath, model }), { encoding: 'utf8', mode: 0o700 });
   fs.renameSync(temporaryPath, shortcutPath);
   fs.chmodSync(shortcutPath, 0o755);
   return shortcutPath;

@@ -12,7 +12,8 @@ function shellQuote(value) {
 }
 
 function shortcut(command) {
-  return `#!/bin/zsh\nset -u\n${shellQuote(process.execPath)} ${shellQuote(launcher)} ${command}\nresult=$?\nif (( result == 0 )); then\n  /usr/bin/osascript -e 'tell application id "com.openai.codex" to quit' >/dev/null 2>&1 || true\n  /bin/sleep 2\n  /usr/bin/open -a ChatGPT\nelse\n  printf '\\n切换失败。按回车关闭窗口…'\n  read -r answer\nfi\nexit "$result"\n`;
+  const node = process.execPath;
+  return `#!/bin/zsh\nset -u\nexport PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"\n${shellQuote(node)} ${shellQuote(launcher)} ${command} --launch\nresult=$?\nif (( result != 0 )); then\n  printf '\\n切换失败。按回车关闭窗口…'\n  read -r answer\nfi\nexit "$result"\n`;
 }
 
 export function installMetalShortcuts(desktopDir = path.join(os.homedir(), 'Desktop')) {
@@ -25,6 +26,12 @@ export function installMetalShortcuts(desktopDir = path.join(os.homedir(), 'Desk
     fs.renameSync(temporary, target);
     fs.chmodSync(target, 0o755);
     installed.push(target);
+  }
+  const oldDirect = path.join(desktopDir, '本地 Codex（Ollama 直连）.command');
+  if (fs.existsSync(oldDirect)) {
+    fs.writeFileSync(oldDirect, shortcut('hybrid'), {encoding:'utf8', mode:0o755});
+    fs.chmodSync(oldDirect, 0o755);
+    installed.push(oldDirect);
   }
   return installed;
 }

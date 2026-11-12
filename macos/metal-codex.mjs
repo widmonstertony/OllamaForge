@@ -4,15 +4,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createMetalCatalog, hybridEndpoint } from '../codex-hybrid-config.mjs';
+import { atomicWrite } from '../ollama-chatgpt-hybrid.mjs';
+import { connect, resolveCodexExecutable } from '../connect.mjs';
+import { localCodexLaunch, restoreNativeCodex } from './native-codex.mjs';
+import { findCodexApplicationName } from './install-direct-shortcut.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const helper = path.join(root, 'codex-mode-config.mjs');
-const connectHelper = path.join(root, 'connect.mjs');
 const configDir = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const configPath = path.join(configDir, 'config.toml');
 const globalStatePath = path.join(configDir, '.codex-global-state.json');
 const stateDir = path.join(os.homedir(), 'Library', 'Application Support', 'LocalCodexMetal');
-const snapshotPath = path.join(stateDir, 'pre-metal-codex-config.json');
 const catalogPath = path.join(configDir, 'local-qwen-metal-catalog.json');
 const sourceCatalogPath = path.join(root, 'local-qwen-catalog.json');
 const modelAlias = 'qwen3.5-codex-metal-8k';
@@ -23,9 +25,13 @@ const uid = typeof process.getuid === 'function' ? process.getuid() : null;
 const domain = uid === null ? null : `gui/${uid}`;
 const metalLabel = 'com.localcodex.metal-server';
 const adapterLabel = 'com.localcodex.ollama-adapter';
+const gatewayLabel = 'com.localcodex.hybrid-gateway';
 const launchAgentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
 const metalPlist = path.join(launchAgentsDir, `${metalLabel}.plist`);
 const adapterPlist = path.join(launchAgentsDir, `${adapterLabel}.plist`);
+const gatewayPlist = path.join(launchAgentsDir, `${gatewayLabel}.plist`);
+const nodeExecutable = ['/usr/local/bin/node', '/opt/homebrew/bin/node', process.execPath]
+  .find(candidate => fs.existsSync(candidate));
 
 function xml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -85,6 +91,15 @@ function writePlist(plistPath, content) {
   fs.chmodSync(plistPath, 0o600);
 }
 
+function ensureAgent(plistPath, label, content, changed = false) {
+  const same = fs.existsSync(plistPath) && fs.readFileSync(plistPath, 'utf8') === content;
+  const loaded = spawnSync('launchctl', ['print', `${domain}/${label}`], {stdio:'ignore'}).status === 0;
+  if (same && loaded && !changed) return;
+  stopAgent(plistPath, label);
+  writePlist(plistPath, content);
+  run('launchctl', ['bootstrap', domain, plistPath]);
+}
+
 function installMetalAgent(serverPath, modelPath) {
   const stdoutPath = path.join(stateDir, 'metal-server.stdout.log');
   const stderrPath = path.join(stateDir, 'metal-server.stderr.log');
@@ -105,25 +120,30 @@ function installMetalAgent(serverPath, modelPath) {
     `<key>WorkingDirectory</key><string>${xml(root)}</string>\n` +
     `<key>StandardOutPath</key><string>${xml(stdoutPath)}</string>\n` +
     `<key>StandardErrorPath</key><string>${xml(stderrPath)}</string>\n` +
-    `<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>\n` +
+    `<key>RunAtLoad</key><false/><key>KeepAlive</key><false/>\n` +
     `<key>ThrottleInterval</key><integer>10</integer>\n</dict></plist>\n`;
-  stopAgent(metalPlist, metalLabel);
-  writePlist(metalPlist, content);
-  run('launchctl', ['bootstrap', domain, metalPlist]);
+  ensureAgent(metalPlist, metalLabel, content);
 }
 
 function installAdapterAgent() {
   const runtimeAdapter = path.join(stateDir, 'codex-ollama-adapter.mjs');
   const runtimeRunner = path.join(stateDir, 'run-codex-ollama-adapter.mjs');
-  fs.copyFileSync(path.join(root, 'codex-ollama-adapter.mjs'), runtimeAdapter);
-  fs.copyFileSync(path.join(root, 'run-codex-ollama-adapter.mjs'), runtimeRunner);
+  let changed = false;
+  for (const name of ['codex-ollama-adapter.mjs', 'run-codex-ollama-adapter.mjs', 'codex-local-context.mjs']) {
+    const source = fs.readFileSync(path.join(root, name));
+    const target = path.join(stateDir, name);
+    if (!fs.existsSync(target) || !source.equals(fs.readFileSync(target))) {
+      fs.writeFileSync(target, source, {mode:0o600});
+      changed = true;
+    }
+  }
   const stdoutPath = path.join(stateDir, 'adapter-launchd.stdout.log');
   const stderrPath = path.join(stateDir, 'adapter-launchd.stderr.log');
   const content = `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
     `<plist version="1.0"><dict>\n` +
     `<key>Label</key><string>${adapterLabel}</string>\n` +
-    `<key>ProgramArguments</key>${plistArray([process.execPath, runtimeRunner])}\n` +
+    `<key>ProgramArguments</key>${plistArray([nodeExecutable, runtimeRunner])}\n` +
     `<key>EnvironmentVariables</key><dict>` +
     `<key>CODEX_OLLAMA_ADAPTER_PORT</key><string>${adapterPort}</string>` +
     `<key>OLLAMA_BASE_URL</key><string>http://127.0.0.1:${metalPort}</string>` +
@@ -135,9 +155,34 @@ function installAdapterAgent() {
     `<key>StandardErrorPath</key><string>${xml(stderrPath)}</string>\n` +
     `<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>\n` +
     `<key>ThrottleInterval</key><integer>5</integer>\n</dict></plist>\n`;
-  stopAgent(adapterPlist, adapterLabel);
-  writePlist(adapterPlist, content);
-  run('launchctl', ['bootstrap', domain, adapterPlist]);
+  ensureAgent(adapterPlist, adapterLabel, content, changed);
+}
+
+function installGatewayAgent() {
+  const target = path.join(stateDir, 'codex-hybrid-gateway.mjs');
+  let changed = false;
+  for (const name of ['codex-hybrid-gateway.mjs', 'codex-local-runtime.mjs']) {
+    const source = fs.readFileSync(path.join(root, name));
+    const file = path.join(stateDir, name);
+    if (!fs.existsSync(file) || !source.equals(fs.readFileSync(file))) {
+      fs.writeFileSync(file, source, {mode:0o600});
+      changed = true;
+    }
+  }
+  const content = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<plist version="1.0"><dict>` +
+    `<key>Label</key><string>${gatewayLabel}</string>` +
+    `<key>ProgramArguments</key>${plistArray([nodeExecutable, target])}` +
+    `<key>EnvironmentVariables</key><dict>` +
+    `<key>CODEX_HYBRID_METAL_ON_DEMAND</key><string>1</string>` +
+    `<key>CODEX_HYBRID_LOCAL_CATALOG</key><string>${xml(catalogPath)}</string>` +
+    `<key>CODEX_HYBRID_CLOUD_CACHE</key><string>${xml(path.join(configDir, 'models_cache.json'))}</string>` +
+    `</dict>` +
+    `<key>StandardOutPath</key><string>${xml(path.join(stateDir, 'gateway.stdout.log'))}</string>` +
+    `<key>StandardErrorPath</key><string>${xml(path.join(stateDir, 'gateway.stderr.log'))}</string>` +
+    `<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>` +
+    `<key>ThrottleInterval</key><integer>5</integer></dict></plist>\n`;
+  ensureAgent(gatewayPlist, gatewayLabel, content, changed);
 }
 
 async function waitFor(url, timeoutMs = 120_000) {
@@ -153,7 +198,7 @@ async function waitFor(url, timeoutMs = 120_000) {
 }
 
 async function smokeTest() {
-  const response = await fetch(`http://127.0.0.1:${adapterPort}/v1/responses`, {
+  const response = await fetch(`${hybridEndpoint}/responses`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -163,7 +208,7 @@ async function smokeTest() {
       max_output_tokens: 24,
       reasoning: { effort: 'none' },
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(60_000),
   });
   const payload = await response.json();
   if (!response.ok || !payload.output?.some((item) => item.type === 'message')) {
@@ -188,68 +233,64 @@ function resolveRecentCloudSelection(statePath = globalStatePath) {
   }
 }
 
-function configAction(action, cloudSelection = null) {
-  run(process.execPath, [helper, action, configPath, snapshotPath,
-    ...(action === 'local' ? [sourceCatalogPath, catalogPath, modelAlias, modelAlias] : [])], {
-    env: {
-      ...process.env,
-      CODEX_LOCAL_CONTEXT_WINDOW: String(contextWindow),
-      CODEX_LOCAL_PROVIDER_NAME: 'Local Qwen via Radeon Metal',
-      ...(cloudSelection ? {
-        CODEX_CLOUD_MODEL: cloudSelection.model,
-        CODEX_CLOUD_REASONING_EFFORT: cloudSelection.reasoningEffort,
-      } : {}),
-    },
-  });
-}
-
-function stopServices() {
-  stopAgent(adapterPlist, adapterLabel);
-  stopAgent(metalPlist, metalLabel);
-}
-
 export { findMetalServer, resolveOllamaModel, resolveRecentCloudSelection, modelAlias, contextWindow };
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isDirectRun) {
-  if (process.platform !== 'darwin' || process.arch !== 'x64') {
-    throw new Error('Radeon Metal deployment requires an Intel macOS host.');
-  }
-  if (!domain) throw new Error('Could not determine the current macOS launchd GUI domain.');
-  if (!fs.existsSync(configPath)) throw new Error(`Codex config not found: ${configPath}`);
   const command = process.argv[2] || 'status';
-  if (!['local', 'cloud', 'status'].includes(command)) {
-    throw new Error('Usage: node macos/metal-codex.mjs <local|cloud|status>');
-  }
-  if (command === 'local') {
+  const launch = process.argv.includes('--launch');
+  if (command === 'cloud') {
+    const result = restoreNativeCodex(configPath);
+    if (result.changed) {
+      console.log(`已恢复 Codex 原生连接。备份：${result.backup}`);
+      console.log('请在正在运行的任务结束后退出并重开 Codex。');
+    }
+    if (launch) run('/usr/bin/open', ['-a', findCodexApplicationName()]);
+  } else if (command === 'hybrid' || (command === 'local' && launch && process.arch === 'arm64')) {
+    // Preserve the old shortcut argument, but run the isolated Ollama entry.
+    connect({ launch, noShortcut: true });
+  } else if (command === 'local') {
+    if (process.platform !== 'darwin' || process.arch !== 'x64' || !domain) {
+      throw new Error('Radeon Metal deployment requires an Intel macOS GUI session.');
+    }
     const serverPath = findMetalServer();
     const modelPath = resolveOllamaModel();
     if (!serverPath) throw new Error('Patched llama-server was not found. Install the LeetTutor AMD Metal runtime first.');
     if (!modelPath) throw new Error('qwen3.5:9b Ollama model blob was not found.');
     fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-    fs.chmodSync(stateDir, 0o700);
-    configAction('snapshot');
+    const catalog = createMetalCatalog(JSON.parse(fs.readFileSync(sourceCatalogPath, 'utf8')));
+    const catalogText = JSON.stringify(catalog, null, 2) + '\n';
+    if (!fs.existsSync(catalogPath) || fs.readFileSync(catalogPath, 'utf8') !== catalogText) {
+      atomicWrite(catalogPath, catalogText);
+    }
     installMetalAgent(serverPath, modelPath);
-    await waitFor(`http://127.0.0.1:${metalPort}/v1/models`);
     installAdapterAgent();
     await waitFor(`http://127.0.0.1:${adapterPort}/health`, 30_000);
-    await smokeTest();
-    configAction('local');
-    console.log(`Radeon Metal Codex is ready: ${modelAlias}, ${contextWindow} tokens.`);
-  } else if (command === 'cloud') {
-    configAction('cloud', resolveRecentCloudSelection());
-    const restoredConfig = fs.readFileSync(configPath, 'utf8');
-    if (restoredConfig.includes('127.0.0.1:11434/api/codex/v1')) {
-      run(process.execPath, [connectHelper, '--disconnect']);
+    installGatewayAgent();
+    await waitFor(`${hybridEndpoint}/health`, 15_000);
+    if (launch) {
+      const codex = resolveCodexExecutable();
+      if (!codex) throw new Error('Codex CLI was not found.');
+      const { args, env } = localCodexLaunch({
+        homeDir: os.homedir(), environment: process.env, backend: 'metal',
+        endpoint: hybridEndpoint, model: modelAlias, contextWindow,
+      });
+      run(codex, [...args, '-c', `model_catalog_json=${JSON.stringify(catalogPath)}`], { env });
+    } else {
+      await smokeTest();
+      console.log(`Radeon Metal ready: ${modelAlias}. Use the local Codex shortcut to open its terminal.`);
     }
-    stopServices();
-    console.log('OpenAI cloud configuration restored and Metal services stopped.');
-  } else {
+  } else if (command === 'status') {
     let metalReady = false;
     let adapterReady = false;
     try { metalReady = (await fetch(`http://127.0.0.1:${metalPort}/v1/models`, { signal: AbortSignal.timeout(1500) })).ok; } catch {}
     try { adapterReady = (await fetch(`http://127.0.0.1:${adapterPort}/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch {}
     console.log(`Metal server: ${metalReady ? 'ready' : 'offline'}`);
     console.log(`Codex adapter: ${adapterReady ? 'ready' : 'offline'}`);
+    let gatewayReady = false;
+    try { gatewayReady = (await fetch(`${hybridEndpoint}/health`, {signal:AbortSignal.timeout(1500)})).ok; } catch {}
+    console.log(`Hybrid gateway: ${gatewayReady ? 'ready' : 'offline'}`);
+  } else {
+    throw new Error('Usage: node macos/metal-codex.mjs <local|cloud|hybrid|status> [--launch]');
   }
 }

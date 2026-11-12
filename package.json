@@ -4,11 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-context-policy.mjs && node test-strata-bridge.mjs && node test-desktop-smoke.mjs && node test-deepseek-harness.mjs && node test-deepseek-recovery.mjs && node test-openclaw-startup.mjs && node test-repair-codex-thread.mjs && node test-native-model-isolation.mjs && node test-native-thread-repair.mjs",
+    "test": "node test-codex-local-context.mjs && node test-codex-local-runtime.mjs && node test-codex-thread-model.mjs && node test-hybrid-config.mjs && node test-hybrid-gateway.mjs && node test-codex-ollama-adapter.mjs && node test-config.mjs && node test-macos-cloud-shortcut.mjs && node test-macos-ollama-chatgpt-hybrid.mjs && node test-macos-metal.mjs && node test-setup.mjs && node test-connect.mjs && node test-deploy.mjs && node test-strata-context-policy.mjs && node test-strata-bridge.mjs && node test-desktop-smoke.mjs && node test-deepseek-harness.mjs && node test-deepseek-recovery.mjs && node test-openclaw-startup.mjs && node test-repair-codex-thread.mjs && node test-native-model-isolation.mjs && node test-native-thread-repair.mjs",
     "setup": "node connect.mjs",
     "connect": "node connect.mjs",
-    "repair:native": "node native-model-isolation.mjs repair",
-    "local:codex": "node local-codex.mjs",
     "repair:thread": "node repair-codex-thread.mjs",
     "test:thread-recovery": "node test-repair-codex-thread.mjs",
     "connect:deepseek": "node deepseek-harness.mjs connect",
@@ -46,9 +44,14 @@
     "install:macos-direct-shortcut": "node macos/install-direct-shortcut.mjs",
     "enable:macos-hybrid": "node macos/ollama-chatgpt-hybrid.mjs",
     "deploy:macos-metal": "node macos/metal-codex.mjs local",
+    "deploy:macos-hybrid": "node macos/metal-codex.mjs hybrid",
     "restore:macos-metal": "node macos/metal-codex.mjs cloud",
     "install:macos-metal-shortcuts": "node macos/install-metal-shortcuts.mjs",
     "test:live": "node test-live-ollama.mjs",
+    "setup:macos-harness": "node macos/ollama-harness.mjs setup",
+    "launch:macos-harness": "node macos/ollama-harness.mjs launch",
+    "repair:native": "node native-model-isolation.mjs repair",
+    "local:codex": "node local-codex.mjs",
     "test:native": "node test-native-model-isolation.mjs"
   },
   "engines": {

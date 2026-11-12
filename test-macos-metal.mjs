@@ -45,6 +45,11 @@ try {
   assert.match(cloud, /metal-codex\.mjs' cloud/);
   assert.doesNotMatch(local, /display dialog|yes/i);
   assert.match(local, /按回车关闭窗口/);
+  assert.match(local, /local --launch/);
+  assert.doesNotMatch(cloud, /osascript|to quit/);
+  fs.writeFileSync(path.join(work, '本地 Codex（Ollama 直连）.command'), 'old');
+  assert.equal(shortcuts.installMetalShortcuts(work).length, 3);
+  assert.match(fs.readFileSync(path.join(work, '本地 Codex（Ollama 直连）.command'), 'utf8'), /hybrid --launch/);
   console.log('PASS: Metal runtime discovery and direct desktop shortcuts.');
 } finally {
   if (originalModelPath === undefined) delete process.env.LEETTUTOR_METAL_MODEL_PATH;

@@ -8,6 +8,16 @@
 !codex-ollama-adapter.mjs
 !run-codex-ollama-adapter.mjs
 !codex-mode-config.mjs
+!codex-hybrid-config.mjs
+!codex-hybrid-gateway.mjs
+!codex-local-context.mjs
+!codex-thread-model.mjs
+!test-codex-thread-model.mjs
+!codex-local-runtime.mjs
+!test-codex-local-runtime.mjs
+!test-codex-local-context.mjs
+!test-hybrid-config.mjs
+!test-hybrid-gateway.mjs
 !test-codex-ollama-adapter.mjs
 !test-config.mjs
 !test-macos-cloud-shortcut.mjs
@@ -29,6 +39,8 @@
 !test-desktop-smoke.mjs
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
+!deepseek-local-tools.mjs
+!deepseek-restart-guard.mjs
 !strata-assistants.mjs
 !codex-app-server.mjs
 !repair-codex-thread.mjs
@@ -93,6 +105,8 @@ macos/*
 !macos/ollama-chatgpt-hybrid.mjs
 !macos/install-direct-shortcut.mjs
 !macos/metal-codex.mjs
+!macos/native-codex.mjs
+!macos/ollama-harness.mjs
 !macos/install-metal-shortcuts.mjs
 !test-macos-metal.mjs
 !.github/

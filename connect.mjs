@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { atomicWrite, decodedTopString, setTopValue } from './ollama-chatgpt-hybrid.mjs';
 import { findCodexApplicationName, installDirectShortcut } from './macos/install-direct-shortcut.mjs';
 import { resolveOllamaExecutable } from './setup.mjs';
+import { localCodexLaunch, restoreNativeCodex } from './macos/native-codex.mjs';
 import { configureStrata, strataEnabled } from './strata-config.mjs';
 import { STRATA_MODEL } from './strata-codex-bridge.mjs';
 import { installLocalProfile, LOCAL_PROFILE } from './native-model-isolation.mjs';
@@ -86,8 +87,11 @@ export function resolveCodexExecutable({ platform = process.platform, homeDir = 
 
   if (platform === 'darwin') {
     return [
-      '/Applications/Codex.app/Contents/Resources/codex',
-      path.join(homeDir, 'Applications', 'Codex.app', 'Contents', 'Resources', 'codex'),
+      ...['Codex.app', 'ChatGPT.app'].flatMap(app => ['/Applications', path.join(homeDir, 'Applications')]
+        .flatMap(directory => [
+          path.join(directory, app, 'Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex'),
+          path.join(directory, app, 'Contents/Resources/codex'),
+        ])),
     ].find((candidate) => fs.existsSync(candidate)) ?? null;
   }
   return null;
@@ -339,8 +343,52 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
   if (!['win32', 'darwin', 'linux'].includes(platform)) throw new Error('Unsupported platform.');
   const homeDir = dependencies.homeDir ?? os.homedir();
   const environment = dependencies.environment ?? process.env;
-  const configPath = path.join(environment.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
   const runCommand = dependencies.runCommand ?? run;
+  const configPath = path.join(environment.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
+  if (platform === 'darwin' && disconnect) {
+    return { disconnected: true, native: true, ...restoreNativeCodex(configPath) };
+  }
+  const bundledOllama = '/Applications/Ollama.app/Contents/Resources/ollama';
+  const ollama = dependencies.ollamaExecutable ?? (platform === 'darwin' && fs.existsSync(bundledOllama)
+    ? bundledOllama : resolveOllamaExecutable({ platform, environment }));
+
+  if (platform === 'darwin' && !list) {
+    const localEnv = { ...environment, OLLAMA_HOST: 'http://127.0.0.1:11434' };
+    const listModels = () => parseInstalledModels(runCommand(ollama, ['list'], { stdio: 'pipe', env: localEnv }).stdout);
+    let installed;
+    try {
+      installed = listModels();
+    } catch (error) {
+      if (!launch) throw error;
+      runCommand('/usr/bin/open', ['-a', 'Ollama']);
+      for (let attempt = 0; attempt < 30 && !installed; attempt++) {
+        sleep(500);
+        try { installed = listModels(); } catch {}
+      }
+      if (!installed) throw new Error('Ollama did not start. Open Ollama and retry the local shortcut.');
+    }
+    const current = fs.existsSync(configPath) ? decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model') : null;
+    const preferred = installed.some(name => canonical(name) === 'qwen3.5-codex-fast-16k')
+      ? 'qwen3.5-codex-fast-16k' : current;
+    const primary = selectPrimaryModel(installed, model, preferred);
+    if (!primary) throw new Error('No local model is installed in Ollama.');
+    const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installDirectShortcut({ model: primary }));
+    if (launch) {
+      const codex = dependencies.codexExecutable ?? resolveCodexExecutable({ platform, homeDir, environment });
+      if (!codex) throw new Error('Codex CLI was not found.');
+      const exactModel = installed.find(name => canonical(name).toLowerCase() === primary.toLowerCase());
+      const settings = tunedModels.get(primary);
+      const contextWindow = settings?.contextWindow ?? (/codex.*16k$/i.test(primary) ? 16384 : undefined);
+      const { args, env } = localCodexLaunch({
+        homeDir, environment: localEnv, backend: 'ollama', endpoint: 'http://127.0.0.1:11434/v1',
+        model: exactModel, contextWindow,
+      });
+      console.log(`启动本地 Codex · ${exactModel}`);
+      runCommand(codex, args, { env });
+    }
+    return { native: true, primary, installed, shortcut, launched: launch };
+  }
+
   if (disconnect) {
     for (const name of [LOCAL_PROFILE + '.config.toml', 'ollamaforge-local-models.json']) {
       const file = path.join(path.dirname(configPath), name);
@@ -348,7 +396,6 @@ export function connect({ model = null, disconnect = false, launch = false, noSh
     }
     return { disconnected: true };
   }
-  const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
   const installed = parseInstalledModels(runCommand(ollama, ['list'], { stdio: 'pipe' }).stdout);
   if (list) return { listed: true, installed };
   if (!fs.existsSync(configPath)) throw new Error('Open Codex once, then retry. Native config was not changed.');
@@ -372,6 +419,15 @@ if (isDirectRun) {
       else {
         console.log('Installed local Ollama models:');
         for (const model of result.installed) console.log(`- ${model}`);
+      }
+    } else if (result.native) {
+      if (result.disconnected) {
+        console.log(result.changed
+          ? `已恢复原生连接。备份：${result.backup}。请在任务结束后重开 Codex。`
+          : 'Codex 已使用原生连接。');
+      } else if (!result.launched) {
+        console.log(`已选本地模型 ${result.primary}。桌面 Codex 使用自己的云端配置。`);
+        if (result.shortcut) console.log(`桌面快捷方式：${result.shortcut}`);
       }
     } else if (result.disconnected) {
       console.log('Ollama models were disconnected from Codex. Restart Codex to reload its native configuration.');
