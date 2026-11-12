@@ -11,6 +11,18 @@ try {
     if ($link.Arguments -ne ('"' + (Join-Path $PSScriptRoot 'Open-DeepSeekHarness.ps1') + '"')) { throw 'Wrong launcher script.' }
     if ($link.IconLocation -ne ((Join-Path $PSScriptRoot 'deepseek-strata.ico') + ',0')) { throw 'Wrong icon.' }
     if ((($link.Hotkey.ToUpperInvariant().Split('+') | Sort-Object) -join '+') -ne 'ALT+CTRL+D') { throw 'Missing hotkey.' }
+    $legacyFile = Join-Path $root 'OllamaForge - DeepSeek Harness.lnk'
+    $legacy = $shell.CreateShortcut($legacyFile)
+    $legacy.TargetPath = $link.TargetPath
+    $legacy.Arguments = $link.Arguments
+    $legacy.Save()
+    & $installer -DesktopDirectory $root
+    if (Test-Path -LiteralPath $legacyFile) { throw 'Owned obsolete shortcut was not removed.' }
+    $legacy = $shell.CreateShortcut($legacyFile)
+    $legacy.TargetPath = Join-Path $env:SystemRoot 'explorer.exe'
+    $legacy.Save()
+    & $installer -DesktopDirectory $root
+    if (-not (Test-Path -LiteralPath $legacyFile)) { throw 'An unrelated legacy-named shortcut was deleted.' }
     & $installer -DesktopDirectory $root
     $otherFile = Join-Path $root 'Unrelated.lnk'
     $other = $shell.CreateShortcut($otherFile)

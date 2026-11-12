@@ -47,7 +47,10 @@ if ($PSCmdlet.ShouldProcess($destination, 'Install native Codex entry with its o
         $old = Join-Path $desktop $legacy.Name
         if (Test-Path -LiteralPath $old) {
             $entry = $shell.CreateShortcut($old)
-            if ($entry.Arguments.Contains('"' + (Join-Path $PSScriptRoot $legacy.Script) + '"')) { Remove-Item -LiteralPath $old }
+            if ($entry.Arguments.Contains('"' + (Join-Path $PSScriptRoot $legacy.Script) + '"')) {
+                Remove-Item -LiteralPath $old
+                Update-OllamaForgeShortcut $old -Deleted
+            }
         }
     }
     Write-Output ('Ready: ' + $destination + ' (Ctrl+Alt+C)')

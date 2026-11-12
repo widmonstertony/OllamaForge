@@ -33,5 +33,8 @@ $shortcut.Save()
 if ([IO.Path]::GetFullPath($DesktopDirectory) -eq [IO.Path]::GetFullPath([Environment]::GetFolderPath('Desktop'))) { Update-OllamaForgeShortcut $path }
 # Retire only our older launcher, preserving unrelated shortcuts.
 $legacy = Join-Path $DesktopDirectory 'OllamaForge - DeepSeek Harness.lnk'
-if ((Test-Path -LiteralPath $legacy) -and (Test-OwnedShortcut ($shell.CreateShortcut($legacy)))) { Remove-Item -LiteralPath $legacy }
+if ((Test-Path -LiteralPath $legacy) -and (Test-OwnedShortcut ($shell.CreateShortcut($legacy)))) {
+    Remove-Item -LiteralPath $legacy
+    if ([IO.Path]::GetFullPath($DesktopDirectory) -eq [IO.Path]::GetFullPath([Environment]::GetFolderPath('Desktop'))) { Update-OllamaForgeShortcut $legacy -Deleted }
+}
 Write-Output ('Shortcut ready: ' + $path + ' (Ctrl+Alt+D)')

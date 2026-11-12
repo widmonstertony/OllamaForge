@@ -1,4 +1,4 @@
-function Update-OllamaForgeShortcut([string]$Path) {
+function Update-OllamaForgeShortcut([string]$Path, [switch]$Deleted) {
     if (-not ('OllamaForge.ShellShortcuts' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
@@ -11,9 +11,15 @@ namespace OllamaForge {
 }
 '@
     }
-    # Notify the desktop shell of the saved link, including its hotkey and icon.
-    [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00000002, 0x1005, $Path, [IntPtr]::Zero)
-    [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00002000, 0x1005, $Path, [IntPtr]::Zero)
+    # Notify the desktop shell about both installed and removed links. A file
+    # deletion without a shell event can leave an obsolete desktop icon visible.
+    if ($Deleted) {
+        [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00000004, 0x1005, $Path, [IntPtr]::Zero)
+        [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00001000, 0x1005, [IO.Path]::GetDirectoryName($Path), [IntPtr]::Zero)
+    } else {
+        [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00000002, 0x1005, $Path, [IntPtr]::Zero)
+        [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00002000, 0x1005, $Path, [IntPtr]::Zero)
+    }
 }
 
 function Get-OllamaForgeBackgroundAction([string]$Runner, [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'OllamaForge')) {
