@@ -14,8 +14,8 @@ const previous = fs.existsSync(marker) ? fs.readFileSync(marker) : null;
 try {
   fs.writeFileSync(marker, `${JSON.stringify({ model: health.model, context: health.max_context, preset: 'Codex IQ3_S 128K' }, null, 2)}\n`);
   const result = connect();
-  if (result.catalogRefreshWarning) throw new Error(`Cloud catalog refresh failed: ${result.catalogRefreshWarning}`);
-  console.log(JSON.stringify({ defaultModel: result.defaultModel, localModel: result.strata, cloudModels: result.mergedCatalog?.cloudModels, bridge: 'http://127.0.0.1:11436/api/codex/v1' }, null, 2));
+  console.log(JSON.stringify({ defaultModel: result.defaultModel, localModel: result.strata, profile: result.profile,
+    nativeConfigurationUnchanged: result.nativeConfigurationUnchanged, bridge: 'http://127.0.0.1:11436/api/codex/v1' }, null, 2));
 } catch (error) {
   if (previous) fs.writeFileSync(marker, previous);
   else fs.rmSync(marker, { force: true });

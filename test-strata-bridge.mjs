@@ -136,23 +136,20 @@ try {
   const freshResult = connect({ noShortcut: true, dependencies });
   assert.equal(freshResult.strata, STRATA_MODEL);
   assert.equal(freshResult.defaultModel, 'gpt-native');
-  const freshCatalog = JSON.parse(fs.readFileSync(path.join(freshConfigDir, 'ollama-launch-models.json')));
-  assert.deepEqual(freshCatalog.models.map((entry) => entry.slug), ['gpt-native', 'gpt-future', STRATA_MODEL]);
+  const freshCatalog = JSON.parse(fs.readFileSync(freshResult.localCatalogPath));
+  assert.deepEqual(freshCatalog.models.map(entry => entry.slug), [STRATA_MODEL]);
   assert.equal(freshCatalog.models.at(-1).include_apps_usage_instructions, true);
-  assert.match(fs.readFileSync(freshConfig, 'utf8'), /\[plugins.personal\]\nenabled = true/);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(freshUser, '.codex', 'ollama-launch-codex-routing.json'))), { models: [] });
-  // Provider settings must not be appended accidentally to a following plugin.
-  fs.appendFileSync(freshConfig, '\n[plugins.after_provider]\nenabled = true\n');
-  configureStrata(freshConfig);
-  const freshText = fs.readFileSync(freshConfig, 'utf8');
+  assert.equal(fs.readFileSync(freshConfig, 'utf8'), originalConfig);
+  assert(!fs.existsSync(path.join(freshUser, '.codex', 'ollama-launch-codex-routing.json')));
+  fs.appendFileSync(freshResult.profilePath, '\n[plugins.after_provider]\nenabled = true\n');
+  configureStrata(freshResult.profilePath);
+  const freshText = fs.readFileSync(freshResult.profilePath, 'utf8');
   assert.match(freshText, /\[model_providers\.ollamaforge\]\nstream_idle_timeout_ms = 600000/);
   assert.match(freshText, /\[plugins.after_provider\]\nenabled = true/);
   connect({ disconnect: true, dependencies });
-  assert.equal(fs.readFileSync(freshConfig, 'utf8'), originalConfig, 'Strata-only disconnect restores the original user configuration.');
-  assert.equal(fs.existsSync(path.join(freshConfigDir, 'ollamaforge-strata.json')), false);
-  assert.equal(calls.length, 1);
-  assert.throws(() => connect({ noShortcut: true, dependencies }), /No local Ollama model is installed/);
   assert.equal(fs.readFileSync(freshConfig, 'utf8'), originalConfig);
+  assert.equal(fs.existsSync(path.join(freshConfigDir, 'ollamaforge-strata.json')), true, 'Disconnect must not remove the running model preset marker.');
+  assert.equal(calls.length, 1);
   console.log('PASS: fresh Strata-only PC, custom home/username, cloud updates, template fallback, provider scope and restore.');
   console.log('PASS: Strata routing, cloud passthrough, credential isolation, compression, SSE and idempotent 128K catalog.');
 } finally {

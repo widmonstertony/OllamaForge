@@ -9,6 +9,7 @@ import { findCodexApplicationName, installDirectShortcut } from './macos/install
 import { resolveOllamaExecutable } from './setup.mjs';
 import { configureStrata, strataEnabled } from './strata-config.mjs';
 import { STRATA_MODEL } from './strata-codex-bridge.mjs';
+import { installLocalProfile, LOCAL_PROFILE } from './native-model-isolation.mjs';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const endpoint = 'http://127.0.0.1:11434/api/codex/v1';
@@ -335,110 +336,30 @@ export function restartCodex(platform = process.platform, dependencies = {}) {
 
 export function connect({ model = null, disconnect = false, launch = false, noShortcut = false, list = false, dependencies = {} } = {}) {
   const platform = dependencies.platform ?? process.platform;
-  if (!['win32', 'darwin'].includes(platform)) {
-    throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);
-  }
+  if (!['win32', 'darwin', 'linux'].includes(platform)) throw new Error('Unsupported platform.');
   const homeDir = dependencies.homeDir ?? os.homedir();
   const environment = dependencies.environment ?? process.env;
-  const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
-  const runCommand = dependencies.runCommand ?? run;
-
-  if (list) {
-    const result = runCommand(ollama, ['list'], { stdio: 'pipe' });
-    return { listed: true, installed: parseInstalledModels(result.stdout) };
-  }
-
   const configPath = path.join(environment.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
-  if (!fs.existsSync(configPath)) throw new Error(`Codex config not found: ${configPath}. Open Codex once, then retry.`);
-
+  const runCommand = dependencies.runCommand ?? run;
   if (disconnect) {
-    const strataBackup = path.join(path.dirname(configPath), 'ollamaforge-strata-backup.toml');
-    if (strataEnabled(configPath) && fs.existsSync(strataBackup)) {
-      atomicWrite(configPath, fs.readFileSync(strataBackup, 'utf8'));
-      fs.rmSync(path.join(path.dirname(configPath), 'ollamaforge-strata.json'), { force: true });
-      fs.rmSync(strataBackup, { force: true });
-      return { disconnected: true };
+    for (const name of [LOCAL_PROFILE + '.config.toml', 'ollamaforge-local-models.json']) {
+      const file = path.join(path.dirname(configPath), name);
+      if (fs.existsSync(file)) fs.unlinkSync(file);
     }
-    runCommand(ollama, ['launch', 'chatgpt', '--restore']);
     return { disconnected: true };
   }
-
-  const listResult = runCommand(ollama, ['list'], { stdio: 'pipe' });
-  const installed = parseInstalledModels(listResult.stdout);
-  const current = decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model');
-  const backupDir = dependencies.backupDir ?? path.join(homeDir, '.ollama', 'backup', 'codex-app');
-  let cloudDefault = findCloudDefault(configPath, installed, backupDir);
-  let cloudCatalog = null;
-  let catalogRefreshWarning = null;
-  try {
-    const refresh = dependencies.refreshCloudCatalog;
-    cloudCatalog = refresh
-      ? refresh()
-      : refreshCodexCloudCatalog({
-          codexExecutable: dependencies.codexExecutable ?? resolveCodexExecutable({ platform, homeDir, environment }),
-          configDir: path.dirname(configPath),
-          runCommand,
-        });
-    if (cloudCatalog) cloudDefault = selectCloudDefault(cloudCatalog, cloudDefault);
-  } catch (error) {
-    catalogRefreshWarning = error.message;
+  const ollama = dependencies.ollamaExecutable ?? resolveOllamaExecutable({ platform, environment });
+  const installed = parseInstalledModels(runCommand(ollama, ['list'], { stdio: 'pipe' }).stdout);
+  if (list) return { listed: true, installed };
+  if (!fs.existsSync(configPath)) throw new Error('Open Codex once, then retry. Native config was not changed.');
+  const result = installLocalProfile(configPath, installed, model);
+  const shortcut = noShortcut || platform === 'linux' ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
+  if (launch) {
+    if (dependencies.openCodex) dependencies.openCodex(platform);
+    else if (platform === 'win32') runCommand(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(rootDir, 'Launch-Codex-Connected.ps1'), '-SkipConnect']);
+    else if (platform === 'darwin') runCommand('/usr/bin/open', ['-a', dependencies.applicationName ?? findCodexApplicationName()]);
   }
-  const primary = selectPrimaryModel(installed, model, current);
-  const strataOnly = !primary && strataEnabled(configPath);
-  if (!primary && !strataOnly) {
-    throw new Error('No local Ollama model is installed. Install one explicitly with Ollama, then rerun npm run setup. OllamaForge setup never downloads a model.');
-  }
-  const launchArgs = ['launch', 'chatgpt', '--config', '--model', primary, '--yes'];
-  fs.mkdirSync(backupDir, { recursive: true });
-  fs.copyFileSync(configPath, path.join(backupDir, `config.toml.pre-ollamaforge-${Date.now()}`));
-  if (strataOnly) {
-    // Strata is not an Ollama model. Never ask Ollama to pull its model ID just
-    // to create a catalog on a fresh PC with an otherwise empty Ollama library.
-    if (!cloudCatalog?.models?.length) throw new Error('Cannot initialize Strata without a native cloud catalog. Open and sign in to Codex, then retry.');
-    const configDir = path.dirname(configPath);
-    const nativeBackup = path.join(configDir, 'ollamaforge-strata-backup.toml');
-    if (!fs.existsSync(nativeBackup)) fs.copyFileSync(configPath, nativeBackup);
-    const catalogPath = path.join(configDir, 'ollama-launch-models.json');
-    atomicWrite(catalogPath, `${JSON.stringify(cloudCatalog, null, 2)}\n`);
-    // Ollama's cloud gateway requires a routing file even with no Ollama models.
-    const routingDir = path.join(homeDir, '.codex');
-    fs.mkdirSync(routingDir, { recursive: true });
-    const routingPath = path.join(routingDir, 'ollama-launch-codex-routing.json');
-    if (!fs.existsSync(routingPath)) atomicWrite(routingPath, '{"models":[]}\n');
-    let text = fs.readFileSync(configPath, 'utf8');
-    text = setTopValue(text, 'openai_base_url', JSON.stringify(endpoint));
-    text = setTopValue(text, 'model_catalog_json', JSON.stringify(catalogPath));
-    atomicWrite(configPath, text);
-  } else {
-    runCommand(ollama, launchArgs);
-    adoptOllamaIntegration(configPath, homeDir);
-  }
-  const configured = fs.readFileSync(configPath, 'utf8');
-  if (decodedTopString(configured, 'openai_base_url') !== endpoint) {
-    throw new Error(`Ollama did not configure the expected Codex endpoint: ${endpoint}`);
-  }
-  const mergedCatalog = mergeCodexCloudCatalog(configPath, cloudCatalog, installed);
-  configureHttpProvider(configPath);
-  const tunedCatalogModels = tuneCodexCatalog(configPath);
-  cloudDefault ??= findCloudDefault(configPath, installed, backupDir);
-  const selectedModelPreserved = preserveSelectedModel(configPath, cloudDefault);
-  const strata = strataEnabled(configPath) ? configureStrata(configPath) : null;
-  const shortcut = noShortcut ? null : (dependencies.installShortcut?.() ?? installShortcut(platform));
-  if (launch) (dependencies.restartCodex ?? restartCodex)(platform, dependencies);
-  return {
-    disconnected: false,
-    primary: primary ?? STRATA_MODEL,
-    defaultModel: cloudDefault ?? primary ?? STRATA_MODEL,
-    installed,
-    endpoint,
-    shortcut,
-    launched: launch,
-    tunedCatalogModels,
-    selectedModelPreserved,
-    mergedCatalog,
-    catalogRefreshWarning,
-    strata: strata?.slug ?? null,
-  };
+  return { ...result, installed, shortcut, launched: launch, disconnected: false, mergedCatalog: null, catalogRefreshWarning: null };
 }
 
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
@@ -455,22 +376,12 @@ if (isDirectRun) {
     } else if (result.disconnected) {
       console.log('Ollama models were disconnected from Codex. Restart Codex to reload its native configuration.');
     } else {
-      console.log('\nCodex connection ready.');
-      console.log(`Endpoint: ${result.endpoint}`);
-      console.log(`Default Codex model: ${result.defaultModel}`);
-      console.log(`Ollama catalog seed: ${result.primary}`);
-      console.log(`Shared local models: ${result.installed.join(', ')}`);
-      if (result.mergedCatalog) {
-        console.log(`Fresh Codex cloud models: ${result.mergedCatalog.cloudModels}`);
-      }
-      if (result.catalogRefreshWarning) {
-        console.warn(`Cloud model refresh warning: ${result.catalogRefreshWarning}`);
-      }
-      console.log('No model was downloaded. Choose a local or cloud model per task in the Codex model picker.');
-      if (result.shortcut) console.log(`Desktop shortcut: ${result.shortcut}`);
-      console.log(result.launched
-        ? 'Codex was refreshed and opened with the shared cloud and local model catalog.'
-        : 'Use the desktop shortcut to refresh and open Codex with the shared model catalog.');
+      console.log('Native Codex provider, model catalog and active chats were preserved.');
+      console.log('Local profile: ' + result.profile);
+      console.log('Local model: ' + result.primary);
+      console.log('Run npm run local:codex to use the separate local profile.');
+      console.log('No model was downloaded; native cloud requests never use the local bridge.');
+      if (result.shortcut) console.log('Native Codex shortcut: ' + result.shortcut);
     }
   } catch (error) {
     console.error(`Connection failed: ${error.message}`);

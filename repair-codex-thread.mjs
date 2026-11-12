@@ -96,9 +96,13 @@ export async function repairThread({ client, id, home, outputRoot, apply = false
   const write = (name, data) => fs.writeFileSync(path.join(backup, name), JSON.stringify(data, null, 2), { flag: 'wx', mode: 0o600 });
   write('source.json', source); write('configuration-hashes.json', originalConfig);
   if (source.path && !verifyId) {
-    const target = path.join(backup, 'rollout.jsonl');
-    fs.copyFileSync(source.path, target, fs.constants.COPYFILE_EXCL);
-    if (await fileHash(source.path) !== await fileHash(target)) throw new Error('The source changed during backup; no fork created.');
+    const stored = [source.path, source.path + '.zst'].find(file => fs.existsSync(file));
+    if (!stored && source.historyMode !== 'paginated') throw new Error('Original rollout is missing; no fork created.');
+    if (stored) {
+      const target = path.join(backup, stored.endsWith('.zst') ? 'rollout.jsonl.zst' : 'rollout.jsonl');
+      fs.copyFileSync(stored, target, fs.constants.COPYFILE_EXCL);
+      if (await fileHash(stored) !== await fileHash(target)) throw new Error('The source changed during backup; no fork created.');
+    }
   }
   const fingerprints = {
     turns: await turnsFingerprint(client, id),
@@ -145,12 +149,17 @@ async function main() {
   const args = process.argv.slice(2);
   const option = name => { const at = args.indexOf(name); return at < 0 ? undefined : args[at + 1]; };
   if (args.includes('--help') || !option('--thread')) {
-    console.log('node repair-codex-thread.mjs --thread <UUID|codex://threads/UUID> [--apply | --verify <child-UUID>] [--codex <executable>]');
-    console.log('Default: read-only diagnosis. Apply: back up and fork full history with the current provider; global settings and the original chat stay unchanged.'); return;
+    console.log('node repair-codex-thread.mjs --thread <UUID|codex://threads/UUID> [--apply [--fork] | --verify <child-UUID>] [--codex <executable>]');
+    console.log('Default: diagnose original native index drift. Apply preserves the original ID. A history fork requires explicit --fork.'); return;
   }
   const home = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
   const client = await connectCodex({ ...(option('--codex') ? { executable: option('--codex') } : {}) });
-  try { console.log(JSON.stringify(await repairThread({ client, id: option('--thread'), home, outputRoot: path.join(ROOT, '.runtime', 'thread-recovery'), apply: args.includes('--apply'), verifyId: option('--verify') }), null, 2)); }
+  try {
+    const result = !args.includes('--fork') && !option('--verify')
+      ? await (await import('./repair-native-thread.mjs')).repairOriginal({ client, id: option('--thread'), home, outputRoot: path.join(ROOT, '.runtime', 'original-thread-repair'), apply: args.includes('--apply') })
+      : await repairThread({ client, id: option('--thread'), home, outputRoot: path.join(ROOT, '.runtime', 'thread-recovery'), apply: args.includes('--apply'), verifyId: option('--verify') });
+    console.log(JSON.stringify(result, null, 2));
+  }
   finally { await client.close(); }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); process.exitCode = 1; });

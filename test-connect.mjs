@@ -49,99 +49,31 @@ assert.throws(() => selectPrimaryModel(installed, 'missing:7b', null), /not inst
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ollamaforge-connect-'));
 try {
-  const configDir = path.join(work, '.codex');
+  const configDir = path.join(work, 'Custom Codex Home'); fs.mkdirSync(configDir);
   const configPath = path.join(configDir, 'config.toml');
-  const catalogPath = path.join(configDir, 'models.json');
-  fs.mkdirSync(configDir, { recursive: true });
-  const backupDir = path.join(work, '.ollama', 'backup', 'codex-app');
-  fs.mkdirSync(backupDir, { recursive: true });
-  const calls = [];
-  const runCommand = (_command, args) => {
-    calls.push(args);
-    if (args[0] === 'list') return { status: 0, stdout: 'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\n' };
-    if (args[0] === 'launch') {
-      fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nopenai_base_url = "http://127.0.0.1:11434/api/codex/v1"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
-      fs.writeFileSync(catalogPath, JSON.stringify({ models: [
-        { slug: 'gpt-stale' },
-        { slug: 'qwen3.5:9b' },
-      ] }));
-      return { status: 0 };
-    }
-    throw new Error(`Unexpected command: ${args.join(' ')}`);
-  };
-  fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
-  const listed = connect({ list: true, dependencies: {
-    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand,
-  } });
-  assert.deepEqual(listed.installed, ['qwen3.5:9b']);
-  assert.ok(!calls.some((args) => args[0] === 'launch'));
-  calls.length = 0;
-
-  connect({ dependencies: {
-    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'shortcut',
-    refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
-  } });
-  assert.ok(calls.at(-1).includes('--config'));
-  assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
-  const connectedConfig = fs.readFileSync(configPath, 'utf8');
-  assert.equal(decodedTopString(connectedConfig, 'model_provider'), 'ollamaforge');
-  assert.equal(decodedTopString(connectedConfig, 'openai_base_url'), null);
-  assert.match(connectedConfig, /\[model_providers\.ollamaforge\]/);
-  assert.match(connectedConfig, /^base_url = "http:\/\/127\.0\.0\.1:11434\/api\/codex\/v1"$/m);
-  assert.match(connectedConfig, /^requires_openai_auth = true$/m);
-  assert.match(connectedConfig, /^supports_websockets = false$/m);
-  assert.deepEqual(JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models.map((entry) => entry.slug),
-    ['gpt-cloud', 'gpt-new', 'qwen3.5:9b']);
-
-  configureHttpProvider(configPath);
-  const idempotentConfig = fs.readFileSync(configPath, 'utf8');
-  assert.equal((idempotentConfig.match(/\[model_providers\.ollamaforge\]/g) ?? []).length, 1);
-
-  fs.writeFileSync(path.join(backupDir, 'config.toml.1'), 'model = "gpt-cloud"\n');
-  fs.writeFileSync(configPath, `model = "qwen3.5:9b"\nmodel_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
-  assert.equal(findCloudDefault(configPath, ['qwen3.5:9b'], backupDir), 'gpt-cloud');
-
-  assert.equal(preserveSelectedModel(configPath, 'missing-model'), false);
-
-  fs.writeFileSync(configPath, 'model = "gpt-cloud"\n');
-  calls.length = 0;
-  let restartPlatform = null;
-  const launched = connect({ launch: true, noShortcut: true, dependencies: {
-    platform: 'win32', homeDir: work, environment: {}, ollamaExecutable: 'ollama', runCommand, installShortcut: () => 'unused',
-    refreshCloudCatalog: () => ({ models: [{ slug: 'gpt-cloud' }, { slug: 'gpt-new' }] }),
-    restartCodex: (platform) => { restartPlatform = platform; },
-  } });
-  assert.equal(launched.launched, true);
-  assert.ok(calls.at(-1).includes('--config'));
-  assert.equal(restartPlatform, 'win32');
-  assert.equal(launched.shortcut, null);
-  assert.equal(decodedTopString(fs.readFileSync(configPath, 'utf8'), 'model'), 'gpt-cloud');
-
-  fs.writeFileSync(catalogPath, JSON.stringify({ models: [
-    { slug: 'qwen3.8:27b-mlx', context_window: 128000, max_context_window: 128000, default_reasoning_level: 'high' },
-    { slug: 'qwen3.8-codex-iq4-xs-64k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
-    { slug: 'qwen3.8-codex-iq4-xs-110k', context_window: 262144, max_context_window: 262144, default_reasoning_level: 'high' },
-  ] }));
-  assert.equal(tuneCodexCatalog(configPath), 3);
-  const tuned = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
-  assert.equal(tuned[0].context_window, 184320);
-  assert.equal(tuned[0].max_context_window, 184320);
-  assert.equal(tuned[0].default_reasoning_level, 'none');
-  assert.equal(tuned[1].context_window, 65536);
-  assert.equal(tuned[1].max_context_window, 65536);
-  assert.equal(tuned[2].context_window, 110000);
-  assert.equal(tuned[2].max_context_window, 110000);
-
-  assert.equal(selectCloudDefault({ models: [{ slug: 'gpt-new' }] }, 'gpt-stale'), 'gpt-new');
-  fs.writeFileSync(configPath, `model_catalog_json = "${catalogPath.replaceAll('\\', '\\\\')}"\n`);
-  fs.writeFileSync(catalogPath, JSON.stringify({ models: [{ slug: 'gpt-old' }, { slug: 'qwen3.5:9b:latest', display_name: 'qwen3.5:9b:latest' }] }));
-  const merged = mergeCodexCloudCatalog(configPath, { models: [{ slug: 'gpt-new' }] }, ['qwen3.5:9b:latest']);
-  assert.deepEqual(merged, { catalogPath, cloudModels: 1, localModels: 1 });
-  const mergedModels = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).models;
-  assert.deepEqual(mergedModels.map((entry) => entry.slug), ['gpt-new', 'qwen3.5:9b']);
-  assert.equal(mergedModels[1].display_name, 'qwen3.5:9b');
+  const original = 'model = "gpt-cloud-future"\nmodel_provider = "openai"\n[plugins.personal]\nenabled = true\n';
+  fs.writeFileSync(configPath, original);
+  const calls = []; let opened = 0;
+  const dependencies = { platform: 'win32', homeDir: work, environment: { CODEX_HOME: configDir }, ollamaExecutable: 'ollama',
+    runCommand: (_command, args) => { calls.push(args); assert.deepEqual(args, ['list']); return { stdout: 'NAME ID SIZE MODIFIED\nqwen3.5:9b abc 6 GB now\n', status: 0 }; },
+    refreshCloudCatalog: () => { throw new Error('Native cloud catalog must not be fetched or copied by local setup'); },
+    installShortcut: () => 'native shortcut', openCodex: () => { opened++; } };
+  const result = connect({ dependencies });
+  assert.equal(result.nativeConfigurationUnchanged, true); assert.equal(result.defaultModel, 'gpt-cloud-future');
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+  const profile = fs.readFileSync(result.profilePath, 'utf8');
+  assert.match(profile, /model_provider = "ollamaforge"/); assert.match(profile, /requires_openai_auth = false/);
+  const localModels = JSON.parse(fs.readFileSync(result.localCatalogPath, 'utf8')).models;
+  assert.deepEqual(localModels.map(m => m.slug), ['qwen3.5:9b']);
+  assert(!localModels.some(m => m.slug.startsWith('gpt')));
+  connect({ launch: true, noShortcut: true, dependencies }); assert.equal(opened, 1);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+  const listed = connect({ list: true, dependencies }); assert.deepEqual(listed.installed, ['qwen3.5:9b']);
+  connect({ disconnect: true, dependencies });
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original); assert(!fs.existsSync(result.profilePath));
+  assert(calls.every(args => args[0] === 'list'));
 } finally {
+  assert.equal(path.dirname(work), os.tmpdir()); assert(path.basename(work).startsWith('ollamaforge-connect-'));
   fs.rmSync(work, { recursive: true, force: true });
 }
-
-console.log('PASS: download-free package contract, connect arguments, installed-model discovery, and primary selection.');
+console.log('PASS: local setup/launch/disconnect preserve native providers, all future cloud models and plugin settings; local catalog is isolated.');

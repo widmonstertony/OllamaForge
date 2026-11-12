@@ -1,293 +1,78 @@
 # OllamaForge
 
-另一台 Windows/macOS 电脑装好下方前置软件后，pull/clone 本仓库并运行
-`npm run setup`，即可连接那台电脑已有的 Ollama 模型并发现它自己的 Codex 安装。
-不会复制原电脑的账号、插件授权、模型权重或绝对路径。
-
-## Strata：Qwen3.8 Flash 128K（Windows）
-
-可选安装器面向 Windows x64、64GB 级内存和 NVIDIA 12GB 以上显存；
-已在 64GB / RTX 4090 Laptop 16GB 上实机验证。配置为：
-Qwen3.8-Flash-Next 125B IQ3_S、131,072 tokens、q4_0 KV、MTP 关闭、
-CPU 图片输入、单并发，并为桌面预留 2GiB 显存。
-约 84GB 的模型下载需要明确执行下载命令。下载前检查 RAM/GPU 兼容性，
-选择显存最大的 NVIDIA GPU，按内存调整专家缓存（64GB 级机器为 40GiB，
-更大内存机器最多 48GiB），Strata 再按可用内存和 Windows 提交空间自动缩小。
-GPU、RAM、SSD 分层保留全部专家；64GB 并不保证同时开其他应用时所有权重都驻留内存。
-
-```powershell
-# 下载前检查硬件，不启动模型或服务。
-npm run check:strata
-# 一个命令安装/下载，并开启登录自动启动。
-# 默认放在 repo 旁边的 Strata-data；请选择至少空闲 95GB 的本地 SSD。
-npm run download:strata -- -EnableStartup
-# 如需自定义位置（示例；按那台电脑的磁盘情况选择）：
-# npm run download:strata -- -DataDirectory "$env:USERPROFILE\Strata-data" -EnableStartup
-# 接入已经运行的 Strata 128K 预设，不下载模型。
-npm run setup:strata
-# 登录 Windows 后自动启动已有模型和连接服务，不再需要桌面快捷方式。
-npm run startup:strata
-# 手动启动/恢复已有模型和连接，不下载、不重启 Codex。
-npm run start:strata
-# 仅重启本地 Strata 模型，保留云端网关和桥接。
-npm run restart:strata
-```
-
-重新打开 Codex 后，在模型列表选择 **Strata · Qwen3.8 Flash 128K (IQ3_S)**。
-桌面的 **本地 Codex（GUI）** 快捷方式会启动已保存的 Strata 预设、
-本地桥接和 Ollama，然后刷新模型目录并重新打开 Codex。
-保留原有云端默认模型，每次连接都从当前安装的 Codex 刷新云端模型信息；
-只有准确匹配 Strata ID 的请求才发给 Strata，云端凭据不会发给它。
-本地服务仅监听 127.0.0.1。Strata 独立运行，权重不导入 Ollama。
-
-自动启动使用当前用户的普通权限计划任务，先启动云端网关和桥接，再加载本地模型；
-首次加载仍需等待权重就绪。每 30 秒检查一次并恢复停止的服务，不重启 Codex、
-不重新下载、不覆盖模型目录，也不会替换正在运行的其他 Strata 预设。
-日志：`%LOCALAPPDATA%\OllamaForge\startup.log`。
-关闭自动启动：`npm run startup:strata:disable`。
-后台任务通过本机编译的无控制台 Windows 启动器运行，不会打开 PowerShell 或 Windows Terminal 窗口。
-更新已有安装时，执行一次 `npm run startup:strata` 会迁移旧后台任务；以后登录即自动恢复，无需快捷方式或命令。
-手动重启前会检查模型文件与请求状态，默认拒绝中断正在处理的本地任务。
-需要中断卡住的本地请求时，显式执行 `npm run restart:strata -- -Force`。
-重启期间暂挂本仓库的自动恢复任务，完成或出错后恢复；不会启用原本关闭的自启。
-开机和重启恢复使用同一套路径发现与旧运行记录修复，适用于普通安装和 Codex Store 安装。
-Strata 空闲释放模型内存时会报告待机，下一次请求由 Strata 自动加载，不会被自启反复重启。
-
-本地入口默认启用上下文精简：保留全部 GitHub、Chrome、电脑控制及核心开发工具；
-本地请求不携带 Pages、Sites、宠物、文档画布等可选应用的工具定义。
-这只影响 Strata 请求，不会卸载插件或修改云端模型的工具。
-命名空间的公共说明只发送一次，原有工具参数、函数说明与使用约束保留。
-单条工具结果超过约 16,000 字符时保留首尾并明确标记省略；图片、游标、用户消息和工具调用参数保持完整。
-需要中间内容时按字段或行号重新读取，避免输出整个模型目录或完整项目 JSON。
-`high` 等思考等级保留，默认给本地思考 4,096 tokens 的预算；显式传入的思考预算优先。
-压缩摘要的输出上限为 4,096 tokens，自动压缩阈值仍为 110,000、实际模型窗口仍为 128K。
-长任务仍会正常压缩，精简用于避免固定工具开销导致每几步就压缩。
-`http://127.0.0.1:11436/context` 可查看最近一次本地请求的优化前后大小，只返回工具名和字符数。
-回归测试：`npm run test:strata-policy`；`npm run setup:strata` 或登录自启会更新旧版桥接。
-纯 Strata 安装不需要在 Ollama 中再下载第二个模型；Ollama 程序仍用于云端网关。
-小内存或其他 GPU 的电脑使用普通 `npm run setup`，连接其已有的 Ollama 模型，
-不会安装这个大预设。自定义 Strata 安装可设置 `STRATA_TERMINAL_PATH` 指向启动器。
-
-```powershell
-npm run test:strata
-npm run test:strata-startup
-$env:CODEX_RESPONSES_URL='http://127.0.0.1:11436/api/codex/v1/responses'
-npm run test:live -- qwen3.8-flash-next-iq3_s
-# 可选：实际 128K 窗口测试（约 125,000 输入 tokens）。
-npm run test:strata-context
-```
-
 [English](README.md) | **简体中文**
 
-把**已经安装在本机 Ollama 中的模型**加入 Codex/ChatGPT 桌面端，同时保留
-原有云端模型。每个 Codex 任务都可以在模型选择器中独立选择本地或云端模型，
-并继续使用 Codex Harness、Skills、Apps、MCP、Browser、Computer Use、Shell、
-文件编辑、沙箱和审批。
+原生 Codex 自己管理云端提供商及完整、自动更新的模型目录。
+OllamaForge 的默认接入不修改原生 config.toml、云端默认模型、认证、插件或运行中的对话。
+本地模型使用独立的 Codex CLI 配置。旧版“全局混合提供商/目录”方案已停用：
+它会把云端对话绑定到本地提供商，也会让更新后新增的原生模型缺失。
 
-> 默认安装路径永远不会下载模型、创建模型别名或修改 Ollama 的上下文/KV
-> cache。模型由用户自己选择并安装，OllamaForge 只负责安全连接和配置回滚。
+## 不影响原生 Codex 的安装
 
-## 支持范围
+准备 Node 24.22.1+、Ollama 和自行安装的本地模型，克隆仓库后运行：
 
-| 平台 | 状态 | 桌面入口 |
-| --- | --- | --- |
-| macOS | 支持 | `Codex.app` 或 `ChatGPT.app` |
-| Windows 10/11 | 支持 | Microsoft Store/桌面版 Codex |
-| Linux | 不提供桌面 GUI 集成 | 可使用 Ollama/Codex CLI，但不属于本仓库的一键桌面流程 |
-
-要求：
-
-- Node.js 24.x 中的 24.22.1+，或 26.x 中的 26.12.1+；
-- 当前版 Ollama，且支持 `ollama launch chatgpt`；
-- 已登录并至少打开过一次 Codex/ChatGPT，使 `~/.codex/config.toml` 存在；
-- 至少一个由用户自己安装或导入的本地 Ollama 模型
-  （上方可选的纯 Strata 流程不需要）。
-
-每台电脑需要自己登录 Codex，并授权 Chrome/电脑控制插件；本仓库保留这些能力，
-不能转移另一台机器的插件权限。自动硬件检查是兼容性检查，无法保证每款 GPU
-都有同样性能。CI 覆盖 Windows/macOS，并在 Linux 跑平台无关测试；此 Windows
-Strata 安装器不提供 Linux 桌面接入，也不安装 AMD/Apple GPU 的 Strata 后端。
-
-本仓库没有 npm 依赖，clone 后不需要先运行 `npm install`。
-
-## 三步开始
-
-### 1. 确认本地模型
-
-```sh
-ollama list
-```
-
-如果列表为空，请先自行选择并安装模型。OllamaForge 不会替用户决定或静默下载。
-
-### 2. 克隆仓库
-
-```sh
-git clone https://github.com/widmonstertony/OllamaForge.git
-cd OllamaForge
-```
-
-### 3. 连接 Codex
-
-```sh
+~~~sh
 npm run setup
-```
-
-这条命令会：
-
-1. 检查 Ollama、Codex 配置和已安装模型；
-2. 让当前安装的 Codex CLI 刷新其云端模型目录；
-3. 调用 Ollama 官方 ChatGPT/Codex 集成生成本地模型条目；
-4. 合并最新 Codex 云端条目与当前 Ollama 本地模型，同时保留默认模型、Reasoning 设置、Apps 和插件配置；
-5. 创建平台对应的桌面快捷方式；
-6. 在任何失败时保留或恢复原配置。
-
-它不会下载模型。完成后彻底退出并重新打开 Codex，随后直接在每个任务的模型
-选择器中选择本地或云端模型。
-以后再次运行 setup 或桌面快捷方式时，只会分别重新生成两部分：Codex 提供最新
-云端条目，Ollama 提供当前本地条目；任何一边都不会成为另一边的固定快照。
-
-## 模型选择
-
-先查看 OllamaForge 能发现的本地模型：
-
-```sh
 npm run models
-```
+npm run local:codex
+~~~
 
-默认运行 `npm run setup` 时，当前云端默认模型会保持不变，所有本地模型成为
-可选项。若希望下一次打开 Codex 时默认突出某个本地模型，可以明确指定其
-`ollama list` 中的完整名称：
+setup 只在 Codex 配置目录旁生成 ollamaforge-local.config.toml 和
+ollamaforge-local-models.json。本地 CLI 仅对自己的进程使用该配置；
+桌面云端继续使用 Codex 原生目录与连接，不下载模型、不复制云端认证、
+不固定云端名单、不重启 Codex。桌面入口只打开原生应用，不关闭正在运行的对话。
+指定本地模型可运行 npm run setup -- --model <已安装名称>。
 
-```sh
-npm run setup -- --model qwen3.8:27b-mlx
-```
+## 清理旧版全局接入
 
-`--model` 只接受已经安装的精确模型名；不存在时立即报错，不会 pull。
+~~~sh
+npm run repair:native
+~~~
 
-连接完成后无需反复运行 setup。直接在 Codex 模型选择器中按任务切换即可：
+命令先备份 config.toml，仅清理确认属于 OllamaForge 的全局提供商、回环地址和目录覆盖。
+其他提供商、用户设置及旧本地目录文件都保留。清理后由原生发现返回账户当前可用的全部模型，
+包括以后新增的模型。如果旧本地模型被设为全局默认，需先选择原来的云端默认模型；
+修复不会猜测并覆盖这个选择。
 
-- 本地模型：推理由 Ollama 在本机执行；
-- 云端模型：仍使用原有云端服务；
-- Codex Harness 与工具执行层保持不变。
+原生会话的索引误标可按下面的命令保留原 ID 修复；真正跨提供商才需明确选择分支。
+不再承诺旧对话中原地无缝切换云端/本地。需要本地 GUI 时，可继续使用下面已有的
+OpenClaw 和 DeepSeek Harness，它们独立于原生云端模型目录。
 
-## 常用命令
+## Windows Strata IQ3_S 128K
 
-| 命令 | 行为 | 下载模型 |
-| --- | --- | --- |
-| `npm run setup` | 首次连接现有模型并安装快捷方式 | 否 |
-| `npm run models` | 只列出本地模型，不修改配置 | 否 |
-| `npm run refresh` | 模型安装/删除后刷新 Codex 目录 | 否 |
-| `npm run launch` | 刷新目录并重启 Codex | 否 |
-| `npm run disconnect` | 恢复连接前配置，不删除权重 | 否 |
-| `npm test` | 跨平台离线测试 | 否 |
-| `npm run test:live -- <模型名>` | 真实文本与工具调用验收 | 否 |
+~~~powershell
+npm run check:strata
+npm run download:strata -- -EnableStartup
+npm run setup:strata
+npm run startup:strata
+npm run start:strata
+npm run restart:strata
+npm run startup:strata:disable
+~~~
 
-为了兼容旧版本，`npm run connect` 和 `npm run deploy` 都等同于安全的
-`npm run setup`，不会下载模型。
+下载必须显式运行，并需要兼容的 NVIDIA GPU、足够内存和 SSD 空间。
+保留现有运行包、预设和登录任务；接入只写本地专用配置。
+Strata 请求继续使用现有回环桥接，原生云端模型不经过它。后台服务没有终端窗口。
+已有上下文策略保留电脑、Chrome、GitHub 工具，其预算仅影响本地请求。
+OpenClaw/JARVIS/Harness 的接入也不会修改原生 Codex 云端模型目录。
 
-## macOS
+## 保留原 ID 修复原生对话
 
-`npm run setup` 会在桌面创建：
-
-```text
-本地 Codex（Ollama 直连）.command
-```
-
-双击它会确认 Ollama、刷新模型目录、关闭并重新打开 Codex。它不是“只能使用
-本地模型”的开关；重启后本地和云端模型仍同时出现在模型选择器中。
-
-Apple Silicon 上已经安装 `qwen3.8:27b-mlx` 时，可直接复用同一份权重：
-
-```sh
-npm run setup -- --model qwen3.8:27b-mlx
-```
-
-仓库会把该已知模型在 Codex 目录中的上下文标记为 184,320，并把默认
-Reasoning 设为 `none`；不会更改 Ollama 服务的真实运行参数。
-
-## Windows
-
-在 PowerShell 中执行与 macOS 相同的命令：
-
-```powershell
-git clone https://github.com/widmonstertony/OllamaForge.git
-cd OllamaForge
-npm run models
-npm run setup
-```
-
-桌面会生成“本地 Codex（GUI）”。双击后会启动/确认 Ollama、刷新所有已安装
-模型、验证原生 Codex endpoint，然后重启 Codex。完整日志位于：
-
-```text
-%LOCALAPPDATA%\OllamaForge\shortcut.log
-```
-
-Windows 与 macOS 使用同一混合目录逻辑：云端模型不会因为加入本地模型而消失。
-
-## Qwen3.8 27B 建议
-
-- 48GB Apple Silicon：`qwen3.8:27b-mlx` 可以直接复用；
-- 16GB GPU：优先选择能够完整放入显存的量化版本；
-- 上下文越大，KV cache 占用和首轮预填充时间越高；
-- 多个 Codex/JARVIS 请求共享单个 Ollama 实例时可能排队，这是预期行为。
-
-OllamaForge 不把某一个模型硬编码为必需项。任意已安装模型都可以进入目录，
-但模型能否稳定规划工具取决于它自身的 tool-calling 能力。
-
-## 可选：显式准备仓库别名
-
-只有确实需要仓库提供的 Qwen 模板/别名时才运行：
-
-```sh
-npm run prepare:alias -- --model 9b
-npm run prepare:alias -- --model 27b
-```
-
-这两条命令仍然**不会下载**基础模型；缺少 `qwen3.5:9b` 或 `qwen3.8:27b`
-时会停止并提示用户先自行安装。
-
-仓库还保留一个明确命名的高级下载器：
-
-```sh
-npm run download:27b
-```
-
-它会下载约 12.18GiB 的指定 IQ4_XS GGUF、校验固定 SHA-256，并创建 64K/
-110K 两个别名。它不是默认 setup 的一部分；只有用户主动执行这条带
-`download` 的命令才会联网下载大模型。旧别名 `npm run deploy:27b` 仍保留兼容。
-
-## 恢复提供商不匹配的旧 Codex 对话
-
-若出现 `This chat uses ollamaforge, but your current provider is openai`，
-它是提供商一致性检查，并非模型安全拒绝。先运行只读诊断：
-
-```sh
+~~~sh
 npm run repair:thread -- --thread <原对话UUID>
-```
-
-确认需要接续时运行：
-
-```sh
 npm run repair:thread -- --thread <原对话UUID> --apply
-```
+~~~
 
-命令备份原记录，再通过官方 Codex app-server 导出完整分页历史，并用当前提供商创建
-接续分支；逐条校验所有历史内容、轮次、原工作目录和提供商后返回新对话链接。
-原对话保留，工作文件仍在原目录，不修改全局提供商、模型目录、路由或认证，
-也不编辑 Codex 的数据库或应用文件。接续分支会有新 UUID，原链接不会被改写。
+默认诊断和修复都不会新建聊天。如果原始会话头一直是 openai，只有索引被旧桥接误标为
+ollamaforge，命令会备份状态数据库和完整历史，只纠正这一条索引字段，恢复原 ID，
+并逐条比对已有轮次和内容。索引修正不改历史、文件、时间戳或权限字段。
+活动中的原对话或不能证明原生来源的记录会被拒绝。修复后重新点原链接，刷新桌面缓存的旧标签。
 
-重复运行会复用已验证的分支；分支中新增加的进度也会保留。活动中的原对话会拒绝迁移。
-若原对话有目标或附件，自动命令会停下，使用桌面官方同目录分支后可运行
-`--verify <接续对话UUID>` 完成验证，避免遗漏附属状态。
-桌面已持有分支时，不抢占其写入锁，需在该桌面里发送消息做最终回复验收。
-
-需要已安装支持分页历史的 Codex CLI。命令会从 PATH 查找原生可执行文件，
-也可通过 `--codex <完整路径>` 或 `OLLAMAFORGE_CODEX_BIN` 指定。
-私有备份与校验结果在 `.runtime/thread-recovery/`，不会提交 Git；完整历史备份可能较大。
-`npm run test:thread-recovery` 验证历史完整性、重复修复、配置保留和进程归属。
-参见 [官方提供商不匹配与完整历史分支说明](https://learn.chatgpt.com/docs/app-server)。
+真正更换提供商不属于索引漂移，原 ID 修复会明确拒绝。只有确实希望另建完整历史分支时，
+才在 --apply 后显式加 --fork；已由桌面创建的分支可用 --verify <接续UUID> 校验。
+私有备份留在不提交的 .runtime/original-thread-repair 和 .runtime/thread-recovery，
+包含完整聊天，可能较大。CLI 从 PATH 或 OLLAMAFORGE_CODEX_BIN 查找，也可用 --codex 指定。
+工具针对已核对的分页 state_5 结构，找不到已有状态数据库时会停止，不会创建或猜测新数据库。
 
 ## OpenClaw 和 LeetTutor JARVIS 连接 Strata（Windows）
 
@@ -398,91 +183,18 @@ Chrome 为每个运行中的会话打开独立可见实例。系统权限仍然�
 纯文本投影丢失句柄的问题。Web 和命令行模式都要求原生适配器与 Chrome 插件先成功
 加载，缺少驱动时直接报错，不会悄悄退化成部分成功。
 
-## 隐私边界
+## 隐私与验证
 
-- 选择本地模型时，模型推理请求发送到 `127.0.0.1:11434`；
-- 选择云端模型时，对话上下文会按原有云端 Provider 的规则离开本机；
-- Browser、邮件、远程 MCP 和网站工具本身仍可能访问外部服务；
-- OllamaForge 不提交模型权重、Codex 登录信息、个人配置快照或运行日志；
-- 适配器不会把 Codex 的 OAuth/API 凭据转发给本地模型。
+私有备份、完整聊天、账户、模型和运行时文件均不提交。每台电脑使用自己的账户、权重和安装路径。
 
-“本地模型”描述的是推理位置，不代表整个工具任务完全离线。
-
-## 验证与故障排查
-
-离线回归测试：
-
-```sh
+~~~sh
 npm test
-```
+npm run test:native
+npm run test:thread-recovery
+npm run test:strata
+npm run test:strata-startup
+~~~
 
-Windows 原生电脑控制、Chrome 和 GitHub 的实际验收见
-[DESKTOP-CONTROL.md](DESKTOP-CONTROL.md)。运行
-`npm run test:desktop:prepare` 创建本机测试文件；
-`npm run test:desktop-policy` 检查验收脚本本身。实际验收必须完成输入保存、
-关闭重开、浏览器表单提交，以及 GitHub 上传后回读；缺一项即失败。
-单元测试通过不代表已验证本机桌面控制。
-
-每台电脑首次控制应用时，需要按 Codex 提示允许。新版记事本可能从启动器
-转交给另一个应用标识，应重新枚举实际窗口；辅助功能为空时使用新的窗口截图。
-GitHub 连接器写入返回 403 时，改用本机已经登录的 Git/GitHub CLI 上传，
-连接器仍可用于读取。应用授权和登录信息由每台电脑自行取得，不会从仓库复制。
-
-真实 Codex/Ollama 网关验收：
-
-```sh
-CODEX_RESPONSES_URL=http://127.0.0.1:11434/api/codex/v1/responses \
-CODEX_TEST_TIMEOUT_MS=600000 \
-npm run test:live -- qwen3.8:27b-mlx
-```
-
-Windows PowerShell：
-
-```powershell
-$env:CODEX_RESPONSES_URL='http://127.0.0.1:11434/api/codex/v1/responses'
-$env:CODEX_TEST_TIMEOUT_MS='600000'
-npm run test:live -- qwen3.8:27b-mlx
-```
-
-常见问题：
-
-- `No local Ollama model is installed`：先自行安装模型，再运行 `npm run setup`；
-- `Codex config not found`：先登录并打开一次 Codex；
-- 模型选择器未刷新：彻底退出 Codex，再双击桌面快捷方式；
-- 更新或删除模型后目录仍旧：运行 `npm run refresh`；
-- 想完全撤销集成：运行 `npm run disconnect` 后重启 Codex；
-- Windows 双击失败：查看 `%LOCALAPPDATA%\OllamaForge\shortcut.log`。
-
-## 工作原理
-
-```text
-Codex Desktop / Harness
-          │
-          ├── 云端模型（保留原有路由）
-          │
-          └── Ollama Codex gateway
-                    │
-                    └── 本机已安装模型
-```
-
-Ollama 原生 endpoint 为：
-
-OllamaForge 会把该 endpoint 注册为仅使用 HTTP 的 Codex provider。这样 GPT-5.6
-等云端模型会继续使用可工作的 Responses 流式传输，不会让 Codex 尝试 Ollama
-尚不支持的 WebSocket 并反复显示“重新连接”。
-
-原有云端模型会继续作为 Codex 默认模型。OllamaForge 只把已安装的本地模型
-添加到模型选择器，绝不会把本地模型提升为全局默认值。
-
-```text
-http://127.0.0.1:11434/api/codex/v1
-```
-
-配置变更前的文件会备份到每台机器自己的：
-
-```text
-~/.ollama/backup/codex-app
-```
-
-所有服务仅绑定回环地址。模型列表刷新不会删除 Ollama 权重；恢复云端配置也不会
-卸载本地模型。
+原生保护测试校验 setup、launch、disconnect 前后主配置逐字节不变，保护以后新增的云端模型，
+并拒绝会强制关闭应用的启动脚本。真实云端、本地和旧对话验收与单元测试分别进行。
+创建接续分支时保留原对话。

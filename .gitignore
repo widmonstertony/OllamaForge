@@ -19,6 +19,9 @@
 !setup.mjs
 !deploy.mjs
 !connect.mjs
+!native-model-isolation.mjs
+!test-native-model-isolation.mjs
+!local-codex.mjs
 !strata-codex-bridge.mjs
 !strata-context.mjs
 !test-strata-context-policy.mjs
@@ -29,6 +32,8 @@
 !strata-assistants.mjs
 !codex-app-server.mjs
 !repair-codex-thread.mjs
+!repair-native-thread.mjs
+!test-native-thread-repair.mjs
 !test-repair-codex-thread.mjs
 !openclaw-performance.mjs
 !openclaw-gateway.mjs

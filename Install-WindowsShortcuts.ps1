@@ -11,7 +11,7 @@ $entries = @(
         Name = '本地 Codex（GUI）'
         Target = $powerShell
         Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $launcher + '"'
-        Description = '刷新 Ollama 模型并自动重启 Codex；云端和本地模型均可选择'
+        Description = '打开原生 Codex；不切换提供商、不替换模型目录、不关闭正在运行的任务。本地模型使用独立配置。'
     }
 )
 foreach ($entry in $entries) {
