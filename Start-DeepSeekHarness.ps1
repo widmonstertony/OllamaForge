@@ -35,11 +35,10 @@ if ($Stop) {
     Stop-OwnedHarnessListener $owner
     return
 }
-if ($owner -and ($task.State -ne 'Running' -or $owner.CommandLine -notlike '*web-guard.patch.yml*')) {
-    if ($task.State -eq 'Running') { Stop-ScheduledTask -TaskName $name; Start-Sleep -Milliseconds 500 }
-    Stop-OwnedHarnessListener $owner
-    $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-}
+# Existing owned listeners are reused. Only the JS idle-restart guard may reserve
+# an automatic restart; opening a shortcut must never kill a running chat.
+& (Join-Path $PSScriptRoot 'Install-DeepSeekShortcut.ps1')
+if ($owner) { return }
 if (-not $task) {
     $scheduled = New-ScheduledTaskAction -Execute $action.Execute -Argument $action.Arguments -WorkingDirectory $PSScriptRoot
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
@@ -47,14 +46,3 @@ if (-not $task) {
     Register-ScheduledTask -TaskName $name -Action $scheduled -Principal $principal -Settings $settings -Description 'OllamaForge-owned DeepSeek Harness Web UI; loopback only, no console' | Out-Null
 }
 if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName $name }
-$desktop = [Environment]::GetFolderPath('Desktop')
-if ($desktop) {
-    $launcher = Get-OllamaForgeBackgroundAction (Join-Path $PSScriptRoot 'Open-DeepSeekHarness.ps1')
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path $desktop 'OllamaForge - DeepSeek Harness.lnk'))
-    $shortcut.TargetPath = $launcher.Execute
-    $shortcut.Arguments = $launcher.Arguments
-    $shortcut.WorkingDirectory = $PSScriptRoot
-    $shortcut.Description = 'Open the local DeepSeek Harness connected to OllamaForge'
-    $shortcut.Save()
-}

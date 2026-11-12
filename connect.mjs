@@ -301,8 +301,9 @@ export function adoptOllamaIntegration(configPath, homeDir = os.homedir()) {
 function installShortcut(platform = process.platform) {
   if (platform === 'win32') {
     const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    run(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(rootDir, 'Install-WindowsShortcuts.ps1')]);
-    return '本地 Codex（GUI）';
+    const environment = { ...process.env }; delete environment.PSModulePath;
+    run(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(rootDir, 'Install-WindowsShortcuts.ps1')], { env: environment });
+    return 'Codex（官方云端）';
   }
   if (platform === 'darwin') return installDirectShortcut();
   throw new Error(`Unsupported platform: ${platform}. Codex desktop connection supports Windows and macOS.`);

@@ -23,6 +23,17 @@ ollamaforge-local-models.json。本地 CLI 仅对自己的进程使用该配置�
 不固定云端名单、不重启 Codex。桌面入口只打开原生应用，不关闭正在运行的对话。
 指定本地模型可运行 npm run setup -- --model <已安装名称>。
 
+## Windows 桌面入口
+
+- Codex（官方云端）：官方应用图标，快捷键 Ctrl+Alt+C。直接打开原生应用，
+  保留原对话和自动更新的云端模型，不运行配置切换脚本。
+- DeepSeek + Strata：鲸鱼/层纹图标，快捷键 Ctrl+Alt+D。打开独立中文 Harness，
+  使用已保存的本地模型和工作区。
+
+安装会清理本仓库的旧「本地 Codex（GUI）」及「云端 Codex」入口。
+Harness 冷启动可能超过一分钟，隐藏入口最多等待五分钟确认认证网页可用；
+重复打开复用服务，不重启正在运行的会话。
+
 ## macOS 本地入口
 
 macOS 的 npm run setup 和 npm run launch 保留独立终端及隔离 CODEX_HOME 的入口。
@@ -195,8 +206,15 @@ npm run repair:deepseek-workspace -- --workspace 'D:\Documents\GitHub\你的项�
 命令会安装固定版本的官方 `@deepseek-ai/dsh`、原生 Cua Driver 和 Chrome
 DevTools 控制插件，连接现有本地模型，并打开已认证的
 `http://127.0.0.1:3080` 界面。Windows 上还会创建桌面快捷方式
-**OllamaForge - DeepSeek Harness**，通过当前用户的后台任务运行，不显示终端。
+**DeepSeek + Strata**，通过当前用户的后台任务运行，不显示终端。
 任务按需启动；重启电脑后也可以用快捷方式启动。Codex 原有连接和开机配置保留。
+
+桌面入口自带鲸鱼/层纹图标，快捷键 Ctrl+Alt+D。按需启动保存的 Strata 预设，
+复用已运行的 Harness，保留工作区和对话，不显示终端。单独修复桌面入口可运行：
+
+~~~sh
+npm run install:deepseek-shortcut
+~~~
 
 优先读取 Strata `/health` 中实际的模型、上下文和图片支持；没有 Strata 时，
 选择 Ollama 中已经安装的模型。不会下载模型权重。运行包、私有访问令牌、会话、

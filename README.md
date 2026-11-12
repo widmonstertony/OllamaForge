@@ -26,6 +26,17 @@ It does not download models, copy cloud auth, pin a cloud catalog, or restart Co
 The desktop shortcut opens the native app without closing any running chat.
 An explicit local choice is supported with npm run setup -- --model <installed-name>.
 
+## Windows desktop entries
+
+- Codex（官方云端） uses the official app icon and Ctrl+Alt+C. It opens the native
+  application directly, retaining existing chats and automatically updated cloud models.
+- DeepSeek + Strata uses the whale/layers icon and Ctrl+Alt+D. It opens the
+  independent Chinese Harness with the saved local model and workspace.
+
+Setup retires the old repository-owned 本地 Codex（GUI） and 云端 Codex entries.
+A cold Harness start can take over a minute; the hidden launcher waits up to
+five minutes for authenticated readiness. Repeated opens reuse the service.
+
 ## macOS local launchers
 
 On macOS, npm run setup and npm run launch retain the independent terminal
@@ -235,9 +246,17 @@ descriptor is backed up first under the ignored local
 This installs the pinned official `@deepseek-ai/dsh` runtime and its native
 Cua Driver and Chrome DevTools providers, connects an existing local model, and
 opens the authenticated Web UI at `http://127.0.0.1:3080`. On Windows it also
-creates **OllamaForge - DeepSeek Harness** on the desktop and starts a user-owned
+creates **DeepSeek + Strata** on the desktop and starts a user-owned
 background task with no terminal window. The task starts on demand; the shortcut
 also starts it after a reboot. It does not change Codex's startup or providers.
+
+The desktop entry has a bundled whale/layers icon and Ctrl+Alt+D hotkey.
+It starts the saved Strata preset when needed, reuses a running Harness, and
+preserves its workspace and chats. To restore the shortcut without starting services:
+
+~~~sh
+npm run install:deepseek-shortcut
+~~~
 
 Strata is preferred when available: its actual model, context capacity and image
 support are read from `/health`. Otherwise an already installed Ollama model is

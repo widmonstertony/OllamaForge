@@ -10,6 +10,8 @@
     "repair:thread": "node repair-codex-thread.mjs",
     "test:thread-recovery": "node test-repair-codex-thread.mjs",
     "connect:deepseek": "node deepseek-harness.mjs connect",
+    "install:deepseek-shortcut": "node deepseek-harness.mjs shortcut",
+    "test:deepseek-shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File test-deepseek-shortcut.ps1",
     "connect:assistants": "node strata-assistants.mjs connect",
     "launch:assistants": "node strata-assistants.mjs launch",
     "test:openclaw": "node test-openclaw-startup.mjs",

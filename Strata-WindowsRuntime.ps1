@@ -1,3 +1,21 @@
+function Update-OllamaForgeShortcut([string]$Path) {
+    if (-not ('OllamaForge.ShellShortcuts' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace OllamaForge {
+    public static class ShellShortcuts {
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        public static extern void SHChangeNotify(uint change, uint flags, string item1, IntPtr item2);
+    }
+}
+'@
+    }
+    # Notify the desktop shell of the saved link, including its hotkey and icon.
+    [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00000002, 0x1005, $Path, [IntPtr]::Zero)
+    [OllamaForge.ShellShortcuts]::SHChangeNotify(0x00002000, 0x1005, $Path, [IntPtr]::Zero)
+}
+
 function Get-OllamaForgeBackgroundAction([string]$Runner, [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'OllamaForge')) {
     $source = Join-Path $PSScriptRoot 'Strata-BackgroundHost.cs'
     $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()

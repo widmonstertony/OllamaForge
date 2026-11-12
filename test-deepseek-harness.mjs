@@ -59,6 +59,11 @@ for (const url of ['https://example.com/v1', 'http://127.0.0.1.evil.test/v1', 'h
 assert.equal(validateLocalURL('http://127.0.0.1:8080/v1/'), 'http://127.0.0.1:8080/v1');
 const strata = await discoverConnection({}, async () => ({ service: 'strata', model: 'installed-iq3', max_context: 131072 }));
 assert.equal(strata.contextWindow, 131072);
+const reconnect = { 'base-url': 'http://127.0.0.1:8080/v1', model: 'installed-iq3', context: 131072 };
+const readSavedStrata = async url => url.endsWith('/models') ? { data: [{ id: 'installed-iq3' }] }
+  : { service: 'strata', model: 'installed-iq3', max_context: 131072, images: true };
+assert.equal((await discoverConnection(reconnect, readSavedStrata)).images, true, 'Saved launch retains verified screenshot support.');
+await assert.rejects(() => discoverConnection({ ...reconnect, context: 262144 }, readSavedStrata), /no longer matches/);
 const patch = buildHarnessPatch(strata);
 assert.equal(patch[3].config.modelPolicies[0].maxTokens, 2048);
 assert.equal(patch[3].config.modelPolicies[0].headroomTokens, 8192);

@@ -36,3 +36,7 @@ jobs:
             $allErrors | Format-List
             throw "PowerShell syntax validation failed."
           }
+      - name: DeepSeek Windows shortcut
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: npm run test:deepseek-shortcut

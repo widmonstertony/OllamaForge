@@ -1,29 +1,57 @@
 ﻿[CmdletBinding(SupportsShouldProcess = $true)]
 param()
-
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Strata-WindowsRuntime.ps1')
 $desktop = [Environment]::GetFolderPath('Desktop')
-$powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$launcher = Join-Path $PSScriptRoot 'Launch-Codex-Connected.ps1'
+$package = Get-AppxPackage -Name OpenAI.Codex | Select-Object -First 1
+if (-not $package) { throw 'Install the official Codex desktop app first.' }
+[xml]$manifest = Get-Content -LiteralPath (Join-Path $package.InstallLocation 'AppxManifest.xml')
+$app = $manifest.Package.Applications.Application | Where-Object { $_.Id -eq 'App' } | Select-Object -First 1
+if (-not $app) { throw 'The native Codex application entry is missing.' }
+$executable = Join-Path $package.InstallLocation $app.Executable
 $shell = New-Object -ComObject WScript.Shell
-$entries = @(
-    @{
-        Name = '本地 Codex（GUI）'
-        Target = $powerShell
-        Arguments = '-NoProfile -STA -ExecutionPolicy Bypass -File "' + $launcher + '"'
-        Description = '打开原生 Codex；不切换提供商、不替换模型目录、不关闭正在运行的任务。本地模型使用独立配置。'
+$destination = Join-Path $desktop 'Codex（官方云端）.lnk'
+$nativeArguments = 'shell:AppsFolder\' + $package.PackageFamilyName + '!' + $app.Id
+if (Test-Path -LiteralPath $destination) {
+    $existing = $shell.CreateShortcut($destination)
+    if ($existing.Arguments -ne $nativeArguments) { throw 'An unrelated shortcut already uses this name; it was preserved.' }
+}
+foreach ($file in Get-ChildItem -LiteralPath $desktop -Filter '*.lnk') {
+    $existing = $shell.CreateShortcut($file.FullName)
+    $keys = ($existing.Hotkey.ToUpperInvariant().Split('+') | Sort-Object) -join '+'
+    if ($keys -eq 'ALT+CTRL+C' -and $existing.Arguments -ne $nativeArguments) { throw 'Ctrl+Alt+C is already assigned to another desktop shortcut.' }
+}
+if ($PSCmdlet.ShouldProcess($destination, 'Install native Codex entry with its official icon')) {
+    $state = Join-Path $env:LOCALAPPDATA 'OllamaForge'
+    New-Item -ItemType Directory -Path $state -Force | Out-Null
+    $iconFile = Join-Path $state 'codex-native.ico'
+    Add-Type -AssemblyName System.Drawing
+    $icon = [Drawing.Icon]::ExtractAssociatedIcon($executable)
+    $stream = [IO.File]::Create($iconFile)
+    try { $icon.Save($stream) } finally { $stream.Dispose(); $icon.Dispose() }
+    $shortcut = $shell.CreateShortcut($destination)
+    $shortcut.TargetPath = Join-Path $env:SystemRoot 'explorer.exe'
+    $shortcut.Arguments = $nativeArguments
+    $shortcut.IconLocation = $iconFile + ',0'
+    $shortcut.Description = 'Codex official cloud | Ctrl+Alt+C | native models and existing chats'
+    $shortcut.Hotkey = 'CTRL+ALT+C'
+    $shortcut.WorkingDirectory = $desktop
+    $shortcut.Save()
+    Update-OllamaForgeShortcut $destination
+    # Retire only repository-owned entries. Opening the cloud app must not run
+    # Restore-Codex-Cloud.ps1 or Launch-Codex-Connected.ps1 and change settings.
+    foreach ($legacy in @(
+        @{Name='本地 Codex（GUI）.lnk'; Script='Launch-Codex-Connected.ps1'},
+        @{Name='云端 Codex.lnk'; Script='Restore-Codex-Cloud.ps1'}
+    )) {
+        $old = Join-Path $desktop $legacy.Name
+        if (Test-Path -LiteralPath $old) {
+            $entry = $shell.CreateShortcut($old)
+            if ($entry.Arguments.Contains('"' + (Join-Path $PSScriptRoot $legacy.Script) + '"')) { Remove-Item -LiteralPath $old }
+        }
     }
-)
-foreach ($entry in $entries) {
-    if (-not (Test-Path -LiteralPath $entry.Target)) { throw "Missing shortcut target: $($entry.Target)" }
-    $shortcutPath = Join-Path $desktop ($entry.Name + '.lnk')
-    if ($PSCmdlet.ShouldProcess($shortcutPath, 'Create or update Codex shortcut')) {
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $entry.Target
-        $shortcut.Arguments = $entry.Arguments
-        $shortcut.WorkingDirectory = $PSScriptRoot
-        $shortcut.Description = $entry.Description
-        $shortcut.Save()
-        Write-Host "Ready: $shortcutPath"
-    }
+    Write-Output ('Ready: ' + $destination + ' (Ctrl+Alt+C)')
+}
+if ((Test-Path -LiteralPath (Join-Path $PSScriptRoot '.runtime\deepseek-harness\connection.json')) -and $PSCmdlet.ShouldProcess($desktop, 'Install independent local Harness entry')) {
+    & (Join-Path $PSScriptRoot 'Install-DeepSeekShortcut.ps1')
 }

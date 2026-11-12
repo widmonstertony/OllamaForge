@@ -69,6 +69,9 @@
 !Start-DeepSeekHarness.ps1
 !Run-DeepSeekHarness.ps1
 !Open-DeepSeekHarness.ps1
+!Install-DeepSeekShortcut.ps1
+!test-deepseek-shortcut.ps1
+!deepseek-strata.ico
 !strata-config.mjs
 !strata-setup.mjs
 !Setup-Strata.ps1

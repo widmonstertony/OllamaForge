@@ -19,7 +19,7 @@ const WEB_LOG = path.join(RUNTIME, 'web.stdout.log');
 
 export function parseHarnessArgs(args) {
   const options = { command: args[0] ?? 'connect', port: 3080 };
-  if (!['connect', 'launch', 'serve', 'test', 'stop', 'repair-workspace'].includes(options.command)) throw new Error('Use connect, launch, test, stop or repair-workspace.');
+  if (!['connect', 'launch', 'serve', 'test', 'stop', 'shortcut', 'repair-workspace'].includes(options.command)) throw new Error('Use connect, launch, test, stop, shortcut or repair-workspace.');
   for (let i = 1; i < args.length; i++) {
     const key = args[i];
     if (key === '--no-open') { options.noOpen = true; continue; }
@@ -103,7 +103,16 @@ export async function discoverConnection(options, read = json) {
       if (options['extra-model'] === options.model) throw new Error('Extra model must differ from the default model.');
       additionalModels.push({ model: options['extra-model'], contextWindow: Number(options['extra-context']) });
     }
+    // Ordinary reconnects resolve to an explicit saved endpoint. Revalidate the
+    // Strata capability rather than silently dropping screenshot support.
+    let images;
+    if (baseURL === 'http://127.0.0.1:8080/v1') {
+      const health = await read('http://127.0.0.1:8080/health');
+      if (health.service !== 'strata' || health.model !== options.model || Number(options.context) > Number(health.max_context)) throw new Error('Saved Strata model or context no longer matches its health response.');
+      images = health.images === true;
+    }
     return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? 'openai-responses',
+      ...(images == null ? {} : { images }),
       ...(additionalModels.length ? { additionalModels } : {}) };
   }
   let strata;
@@ -284,7 +293,10 @@ export async function launchHarness(options) {
     }
   }
   const url = `http://127.0.0.1:${options.port}`;
-  for (let i = 0; i < 80; i++) {
+  // A cold Windows plugin/runtime load can exceed 40s. Keep the hidden
+  // launcher alive until authenticated readiness, with a bounded five minutes.
+  const deadline = Date.now() + 300000;
+  while (Date.now() < deadline) {
     let readyURL;
     try {
       const privateURL = getHarnessWebURL(options.port);
@@ -420,7 +432,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const parsed = parseHarnessArgs(process.argv.slice(2));
     const options = ['connect', 'launch', 'test'].includes(parsed.command)
       ? savedHarnessOptions(parsed, process.argv.includes('--port')) : parsed;
-    if (options.command === 'repair-workspace') {
+    if (options.command === 'shortcut') {
+      if (process.platform !== 'win32') throw new Error('Desktop hotkeys are supported on Windows.');
+      windowsScript('Install-DeepSeekShortcut.ps1');
+    } else if (options.command === 'repair-workspace') {
       if (process.platform !== 'win32') throw new Error('The directory-permission repair is for Windows only.');
       const saved = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
       const workspace = resolveProjectWorkspace(options.workspace ?? saved.workspace ?? ROOT);

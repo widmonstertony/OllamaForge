@@ -58,8 +58,8 @@ internal static class StrataBackgroundHost
                 UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true
             };
-            using (StreamWriter output = new StreamWriter(Path.Combine(state, name + ".host.stdout.log"), true))
-            using (StreamWriter error = new StreamWriter(Path.Combine(state, name + ".host.stderr.log"), true))
+            using (StreamWriter output = new StreamWriter(new FileStream(Path.Combine(state, name + ".host.stdout.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite)))
+            using (StreamWriter error = new StreamWriter(new FileStream(Path.Combine(state, name + ".host.stderr.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite)))
             using (Process child = new Process { StartInfo = info }) {
                 output.AutoFlush = true; error.AutoFlush = true;
                 child.OutputDataReceived += (sender, e) => { if (e.Data != null) output.WriteLine(e.Data); };
