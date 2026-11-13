@@ -86,8 +86,9 @@ export function resolveProjectWorkspace(value, runtime = RUNTIME) {
   return directory;
 }
 
-async function json(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+async function json(url, body) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(5000),
+    ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
   if (!response.ok) throw new Error(`Local endpoint returned HTTP ${response.status}.`);
   return response.json();
 }
@@ -132,6 +133,21 @@ export async function discoverConnection(options, read = json) {
   return { baseURL: 'http://127.0.0.1:11434/v1', model, contextWindow: Number(options.context ?? 32768), api: options.api ?? 'openai-completions' };
 }
 
+function harnessModelName(model) {
+  const id = model.model.replace(/:latest$/, '');
+  const details = model.modelDetails ?? {};
+  let title = id;
+  if (/^qwen3\.8(?:-codex(?:-|$)|:27b(?:-|$))/i.test(id)) title = 'Qwen 3.8 27B';
+  else if (/^qwen3\.5(?:-codex-fast(?:-|$)|:9b(?:-|$))/i.test(id)) title = 'Qwen 3.5 9B';
+  if (title === id && !model.modelDetails) return `${id} (local)`;
+  const quantization = details.quantization_level?.toUpperCase();
+  const quant = quantization === 'NVFP4' ? 'NVFP4（4-bit）' : quantization ?? '量化未报告';
+  const backend = /dflash2/i.test(id) ? `${details.format === 'gguf' ? 'GGUF' : 'MLX'} + DFlash2`
+    : /mlx/i.test(id) ? 'MLX' : details.format === 'gguf' ? 'GGUF' : details.runner ?? details.format;
+  const context = model.contextWindow % 1024 === 0 ? `${model.contextWindow / 1024}K` : `${model.contextWindow} tokens`;
+  return [title, quant, backend, context, '本地'].filter(Boolean).join(' · ');
+}
+
 export function buildHarnessPatch(connection) {
   validateLocalURL(connection.baseURL);
   const models = [connection, ...(connection.additionalModels ?? [])];
@@ -142,7 +158,7 @@ export function buildHarnessPatch(connection) {
       ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoning: 'off' } : {}),
       baseURL: connection.baseURL, streamIdleTimeoutMs: 600000,
       retryPolicy: { mode: 'normal', maxRetries: 1 },
-      models: models.map(model => ({ id: model.model, name: `${model.model} (local)`, contextWindow: model.contextWindow,
+      models: models.map(model => ({ id: model.model, name: harnessModelName(model), contextWindow: model.contextWindow,
         maxTokens: Math.min(8192, Math.floor(model.contextWindow / 4)), input: connection.images ? ['text', 'image'] : ['text'],
         reasoningEfforts: connection.baseURL === 'http://127.0.0.1:8080/v1' ? { off: 'none', high: 'high' } : false })),
     } } } },
@@ -204,6 +220,16 @@ export function withDefaultHarnessLocale(rows = []) {
 
 export async function connectHarness(options) {
   const connection = await discoverConnection(options);
+  if (connection.baseURL === 'http://127.0.0.1:11434/v1') {
+    await Promise.all([connection, ...(connection.additionalModels ?? [])].map(async model => {
+      try {
+        const info = await json('http://127.0.0.1:11434/api/show', { model: model.model });
+        const fields = ['format', 'quantization_level', 'parameter_size', 'runner'];
+        model.modelDetails = Object.fromEntries(fields.filter(key => typeof info.details?.[key] === 'string')
+          .map(key => [key, info.details[key]]));
+      } catch { /* Keep unknown quantization explicit rather than guessing from an alias. */ }
+    }));
+  }
   if (options['tool-profile']) connection.toolProfile = options['tool-profile'];
   ensureInstalled();
   fs.mkdirSync(HOME, { recursive: true });
