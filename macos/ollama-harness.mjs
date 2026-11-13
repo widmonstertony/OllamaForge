@@ -5,14 +5,20 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { connectHarness, launchHarness, ROOT, RUNTIME, resolveProjectWorkspace } from '../deepseek-harness.mjs';
+import { connectHarness, launchHarness, ROOT, RUNTIME, resolveProjectWorkspace, savedHarnessOptions, parseHarnessArgs } from '../deepseek-harness.mjs';
 import { atomicWrite } from '../ollama-chatgpt-hybrid.mjs';
 
-const baseModel = 'qwen3.8:27b';
-const models = [
-  { model: 'qwen3.8-codex-128k:latest', context: 131072 },
-  { model: 'qwen3.8-codex-64k:latest', context: 65536 },
-];
+const backends = new Map([
+  ['qwen3.8:27b', 'qwen3.8-codex'],
+  ['qwen3.8:27b-mlx', 'qwen3.8-codex-mlx'],
+  ['qwen3.8:27b-dflash2-nvfp4', 'qwen3.8-codex-dflash2'],
+]);
+
+function modelAliases(source) {
+  const prefix = backends.get(source);
+  if (!prefix) throw new Error('Supported --model values: ' + [...backends.keys()].join(', '));
+  return [128, 64].map(size => ({ model: prefix + '-' + size + 'k:latest', context: size * 1024 }));
+}
 
 async function localJSON(route, body) {
   const response = await fetch('http://127.0.0.1:11434' + route, {
@@ -33,12 +39,13 @@ async function ensureOllama() {
   throw new Error('Ollama did not start. Open Ollama and retry.');
 }
 
-async function ensureModels() {
+async function ensureModels(baseModel, models) {
   const installed = new Set((await localJSON('/api/tags')).models?.map(model => model.name));
   const ollama = ['/Applications/Ollama.app/Contents/Resources/ollama', '/opt/homebrew/bin/ollama', '/usr/local/bin/ollama']
     .find(file => fs.existsSync(file));
   if (!ollama) throw new Error('Ollama executable was not found.');
-  const source = installed.has('qwen3.8-codex-16k:latest') ? 'qwen3.8-codex-16k:latest' : baseModel;
+  const source = baseModel === 'qwen3.8:27b' && installed.has('qwen3.8-codex-16k:latest')
+    ? 'qwen3.8-codex-16k:latest' : baseModel;
   for (const entry of models) {
     if (installed.has(entry.model)) {
       const info = await localJSON('/api/show', { model: entry.model });
@@ -100,24 +107,38 @@ function migrateLocalToolMasks() {
 async function main() {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('This deployment targets Apple Silicon macOS.');
   const command = process.argv[2] ?? 'setup';
-  if (!['setup', 'launch'].includes(command)) throw new Error('Use setup or launch, optionally --workspace <directory> and --no-open.');
-  let workspace = ROOT;
+  if (!['setup', 'launch'].includes(command)) throw new Error('Use setup or launch, optionally --model <installed model>, --workspace <directory> and --no-open.');
   let noOpen = false;
+  // Ordinary shortcut launches retain the backend selected during setup.
+  const saved = savedHarnessOptions(parseHarnessArgs(['launch']));
+  let workspace = saved.workspace ?? ROOT;
+  let baseModel = [...backends.keys()].find(source => modelAliases(source)[0].model === saved.model) ?? 'qwen3.8:27b';
   for (let index = 3; index < process.argv.length; index++) {
     const argument = process.argv[index];
     if (argument === '--no-open') noOpen = true;
+    else if (argument === '--model' && process.argv[index + 1]) baseModel = process.argv[++index];
     else if (argument === '--workspace' && process.argv[index + 1]) workspace = process.argv[++index];
     else throw new Error('Unknown option: ' + argument);
   }
   workspace = resolveProjectWorkspace(workspace);
+  const models = modelAliases(baseModel);
   await ensureOllama();
-  await ensureModels();
+  await ensureModels(baseModel, models);
+  const installed = new Set((await localJSON('/api/tags')).models?.map(model => model.name));
+  const previousModels = saved['base-url'] === 'http://127.0.0.1:11434/v1' ? [
+    { model: saved.model, contextWindow: Number(saved.context) },
+    ...(saved['extra-model'] ? [{ model: saved['extra-model'], contextWindow: Number(saved['extra-context']) }] : []),
+    ...(saved.additionalModels ?? []),
+  ] : [];
+  const additionalModels = previousModels.filter(entry => installed.has(entry.model) &&
+    !models.some(selected => selected.model === entry.model));
   migrateLocalToolMasks();
   const options = {
     command: 'launch', port: 3080, workspace, noOpen,
     'base-url': 'http://127.0.0.1:11434/v1', api: 'openai-responses',
     model: models[0].model, context: models[0].context,
     'extra-model': models[1].model, 'extra-context': models[1].context,
+    additionalModels,
     'tool-profile': 'local-controls',
   };
   await connectHarness(options);

@@ -61,6 +61,49 @@ prompt overhead. Native control requires macOS accessibility and screen
 capture permissions. Local validation used 64GB unified memory. The 128K test
 recalled a marker from 68,050 input tokens; it did not fill the whole window.
 
+Apple Silicon users can explicitly select Ollama's MLX/NVFP4 backend. The
+DFlash2 variant also provides speculative decoding. Install the desired model
+first, then configure Harness (the pull below downloads about 19GB):
+
+```sh
+ollama pull qwen3.8:27b-dflash2-nvfp4
+npm run setup:macos-harness -- --model qwen3.8:27b-dflash2-nvfp4
+```
+
+Use `--model qwen3.8:27b-mlx` for plain MLX, or `--model qwen3.8:27b` for GGUF.
+Each backend has separate 128K/64K aliases sharing installed weights. Ordinary
+launches and the desktop shortcut remember the chosen backend. Setup itself
+does not download weights or change Codex's cloud settings.
+
+Compare installed models with identical short prompts, roughly 30K-token
+prompts, follow-up requests, and an autonomous tool round trip:
+
+```sh
+npm run benchmark:macos -- qwen3.8-codex-128k:latest qwen3.8:27b-mlx qwen3.8:27b-dflash2-nvfp4
+```
+
+Results go to the ignored `.runtime/performance/` directory. Metrics separate
+time to first token, generation speed, prefix caching, backend, and tool result
+recall. Throughput measurements do not establish general answer quality.
+
+One battery-powered run on 2026-11-12 used an M5 Max with 40 GPU cores, 64GB,
+Ollama 0.40.16, 128K capacity, thinking disabled, temperature=0, and at most
+256 output tokens per sample:
+
+| Backend | Short code tokens/sec, two runs | First token, 29,624-token prompt | First token, follow-up |
+| --- | --- | --- | --- |
+| Original GGUF / Q4_K_M | 64.1 / 63.6 | 54.85 sec | 0.44 sec |
+| MLX / NVFP4 | 65.6 / 74.1 | 44.59 sec | 0.32 sec |
+| MLX / NVFP4 + DFlash2 | 105.6 / 103.2 | 49.28 sec | 0.31 sec |
+
+All three passed autonomous tool calls and fresh tool-result recall. The
+DFlash2 128K alias also recalled a leading marker from 70,335 input tokens.
+See [measured data](macos/benchmark-m5-max.json). DFlash2 helped code generation;
+plain MLX generated one long follow-up faster. Resident GPU memory after the
+tests was about 18.5 / 23.3 / 24.9GB, including different cache states. These
+differences cannot all be attributed to the drafter. The decoding mechanism
+and the change in target quantization need separate quality evaluation.
+
 Run `npm run setup` to create `本地 Codex（Ollama 直连）.command`, or select
 an already installed model explicitly:
 

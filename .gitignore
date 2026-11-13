@@ -110,6 +110,8 @@ macos/*
 !macos/metal-codex.mjs
 !macos/native-codex.mjs
 !macos/ollama-harness.mjs
+!macos/benchmark-ollama.mjs
+!macos/benchmark-m5-max.json
 !macos/install-metal-shortcuts.mjs
 !test-macos-metal.mjs
 !.github/

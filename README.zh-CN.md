@@ -54,6 +54,43 @@ npm run launch:macos-harness
 原生控制需要 macOS 辅助功能与屏幕捕捉权限；本机实测使用了 64GB 统一内存。
 128K 已用 68,050 输入 tokens 验证前文找回，未宣称填满整个窗口的质量表现。
 
+Apple Silicon 可以显式选择 Ollama 的 MLX/NVFP4 后端；DFlash2 版还带推测解码。
+先安装所选模型，再配置 Harness（下面的 `ollama pull` 会下载约 19GB）：
+
+```sh
+ollama pull qwen3.8:27b-dflash2-nvfp4
+npm run setup:macos-harness -- --model qwen3.8:27b-dflash2-nvfp4
+```
+
+也可指定 `--model qwen3.8:27b-mlx`，或用 `--model qwen3.8:27b` 回到 GGUF。
+不同后端使用各自的 128K/64K 别名，共享已有权重；普通启动和桌面快捷方式会记住
+已选后端。配置命令本身不下载模型，不改 Codex 的云端设置。
+
+用相同的短提示、约 3 万 tokens 长提示、连续追问和工具调用测试已安装模型：
+
+```sh
+npm run benchmark:macos -- qwen3.8-codex-128k:latest qwen3.8:27b-mlx qwen3.8:27b-dflash2-nvfp4
+```
+
+结果保存在忽略的 `.runtime/performance/` 中。基准分别记录首字延迟、生成速度、
+提示缓存、运行后端和工具结果找回；输出速度不能代替回答质量评测。
+
+本机 2026-11-12 的一次电池供电测试（M5 Max 40 核 GPU、64GB、Ollama 0.40.16，
+128K 容量、关闭思考、temperature=0、每次最多生成 256 tokens）：
+
+| 后端 | 短代码生成 tokens/秒，两次 | 29,624 tokens 首字等待 | 长文追问首字等待 |
+| --- | --- | --- | --- |
+| 原 GGUF / Q4_K_M | 64.1 / 63.6 | 54.85 秒 | 0.44 秒 |
+| MLX / NVFP4 | 65.6 / 74.1 | 44.59 秒 | 0.32 秒 |
+| MLX / NVFP4 + DFlash2 | 105.6 / 103.2 | 49.28 秒 | 0.31 秒 |
+
+三个版本都通过自主工具调用和随机结果找回。DFlash2 的 128K 别名还通过了
+70,335 输入 tokens 的开头标记找回。详见 [测试数据](macos/benchmark-m5-max.json)。
+DFlash2 对代码生成更快，但不保证每种任务最快；本次普通 MLX 的长文追问生成
+也有快于 DFlash2 的情况。测试结束时 GPU 驻留分别约 18.5 / 23.3 / 24.9GB，
+包含各自缓存状态，不能全部归因于草稿模型。DFlash2 机制和当前模型量化变化
+需要分开评估，不能把吞吐提升当作回答质量相同的证明。
+
 执行 `npm run setup`，会生成「本地 Codex（Ollama 直连）.command」。
 也可以指定已经安装的模型：
 

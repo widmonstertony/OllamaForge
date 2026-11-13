@@ -54,7 +54,8 @@
     "launch:macos-harness": "node macos/ollama-harness.mjs launch",
     "repair:native": "node native-model-isolation.mjs repair",
     "local:codex": "node local-codex.mjs",
-    "test:native": "node test-native-model-isolation.mjs"
+    "test:native": "node test-native-model-isolation.mjs",
+    "benchmark:macos": "node macos/benchmark-ollama.mjs"
   },
   "engines": {
     "node": ">=24.22.1 <25 || >=26.12.1 <27"

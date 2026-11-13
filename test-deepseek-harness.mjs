@@ -49,6 +49,19 @@ assert.equal(remembered.context, 131072);
 assert.equal(remembered.port, 3081);
 assert.equal(remembered['extra-model'], 'local-64k');
 assert.equal(remembered['tool-profile'], 'local-controls');
+const savedWithFallbacks = { ...savedConnection, additionalModels: [
+  ...savedConnection.additionalModels,
+  { model: 'previous-backend', contextWindow: 131072 },
+] };
+const rememberedFallbacks = resolveHarnessOptions(parseHarnessArgs(['launch']), savedWithFallbacks);
+assert.deepEqual(rememberedFallbacks.additionalModels, [{ model: 'previous-backend', contextWindow: 131072 }]);
+const restoredFallbacks = await discoverConnection(rememberedFallbacks,
+  async () => ({ data: [{ id: 'local-128k' }, { id: 'local-64k' }, { id: 'previous-backend' }] }));
+assert.deepEqual(restoredFallbacks.additionalModels, savedWithFallbacks.additionalModels,
+  'Ordinary launches must retain previous backend models for existing chats.');
+await assert.rejects(() => discoverConnection({ ...rememberedFallbacks,
+  additionalModels: [{ model: 'local-64k', contextWindow: 65536 }] },
+async () => ({ data: [{ id: 'local-128k' }, { id: 'local-64k' }] })), /differ/);
 assert.equal(resolveHarnessOptions(parseHarnessArgs(['launch', '--port', '3080']), savedConnection, true).port, 3080);
 assert.equal(resolveHarnessOptions(parseHarnessArgs(['connect', '--model', 'another', '--context', '8192']), savedConnection)['extra-model'], undefined);
 assert.equal(parseHarnessArgs(['launch', '--workspace', 'project with spaces']).workspace, 'project with spaces');

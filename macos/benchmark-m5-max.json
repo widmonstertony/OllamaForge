@@ -1,0 +1,75 @@
+{
+  "date": "2026-11-12",
+  "machine": "MacBook Pro M5 Max, 40 GPU cores, 64 GB unified memory",
+  "macos": "27.3",
+  "ollama": "0.40.16",
+  "power": "battery",
+  "method": {
+    "context": 131072,
+    "temperature": 0,
+    "think": false,
+    "output_tokens": 256,
+    "short_runs": 2,
+    "long_runs": 1,
+    "notes": "Synthetic prompts; identical 29,624-token long input. Runs are sequential. Figures describe these samples, not broad quality or power-efficiency evaluation. Resident GPU bytes include runtime/cache state after each model test."
+  },
+  "results": [
+    {
+      "model": "qwen3.8-codex-128k:latest",
+      "runner": "llamacpp",
+      "short_decode_tps": [
+        64.07,
+        63.63
+      ],
+      "long_first_prompt_tokens": 29624,
+      "long_first_ms": 54854.98,
+      "long_followup_first_ms": 437.89,
+      "long_followup_decode_tps": 53.49,
+      "resident_gpu_bytes": 18456028117,
+      "tool_roundtrip_passed": true
+    },
+    {
+      "model": "qwen3.8:27b-mlx",
+      "runner": "mlx",
+      "short_decode_tps": [
+        65.57,
+        74.09
+      ],
+      "long_first_prompt_tokens": 29624,
+      "long_first_ms": 44592.29,
+      "long_followup_first_ms": 324.51,
+      "long_followup_decode_tps": 109.81,
+      "resident_gpu_bytes": 23336201944,
+      "tool_roundtrip_passed": true
+    },
+    {
+      "model": "qwen3.8:27b-dflash2-nvfp4",
+      "runner": "mlx",
+      "short_decode_tps": [
+        105.6,
+        103.21
+      ],
+      "long_first_prompt_tokens": 29624,
+      "long_first_ms": 49283.07,
+      "long_followup_first_ms": 309.69,
+      "long_followup_decode_tps": 91.04,
+      "resident_gpu_bytes": 24887695704,
+      "tool_roundtrip_passed": true
+    }
+  ],
+  "long_context_validation": {
+    "model": "qwen3.8-codex-dflash2-128k:latest",
+    "prompt_tokens": 70335,
+    "context": 131072,
+    "runner": "mlx",
+    "wall_ms": 113314.09,
+    "passed": true
+  },
+  "harness_validation": {
+    "model": "qwen3.8-codex-dflash2-128k:latest",
+    "real_file_read_write": true,
+    "chrome_fill_click": true,
+    "native_click_type": true,
+    "independent_browser_and_native_receipts": true
+  }
+}

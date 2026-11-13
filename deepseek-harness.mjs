@@ -44,7 +44,7 @@ export function parseHarnessArgs(args) {
 
 /** Preserve a configured connection on ordinary launch/test invocations. */
 export function resolveHarnessOptions(options, saved = {}, explicitPort = false) {
-  const changingConnection = ['base-url', 'model', 'context', 'api', 'extra-model', 'extra-context']
+  const changingConnection = ['base-url', 'model', 'context', 'api', 'extra-model', 'extra-context', 'additionalModels']
     .some(key => options[key] != null);
   const previous = {};
   if (!changingConnection && saved.baseURL) {
@@ -53,6 +53,7 @@ export function resolveHarnessOptions(options, saved = {}, explicitPort = false)
     });
     const extra = saved.additionalModels?.[0];
     if (extra) Object.assign(previous, { 'extra-model': extra.model, 'extra-context': extra.contextWindow });
+    if (saved.additionalModels?.length > 1) previous.additionalModels = saved.additionalModels.slice(1);
   }
   if (saved.toolProfile) previous['tool-profile'] = saved.toolProfile;
   if (saved.workspace) previous.workspace = saved.workspace;
@@ -97,11 +98,16 @@ export async function discoverConnection(options, read = json) {
     const baseURL = validateLocalURL(options['base-url']);
     const listed = await read(`${baseURL}/models`);
     if (!listed.data?.some(item => item.id === options.model)) throw new Error('Selected model is not listed by this endpoint.');
-    const additionalModels = [];
-    if (options['extra-model']) {
-      if (!listed.data?.some(item => item.id === options['extra-model'])) throw new Error('Extra model is not listed by this endpoint.');
-      if (options['extra-model'] === options.model) throw new Error('Extra model must differ from the default model.');
-      additionalModels.push({ model: options['extra-model'], contextWindow: Number(options['extra-context']) });
+    const additionalModels = [
+      ...(options['extra-model'] ? [{ model: options['extra-model'], contextWindow: Number(options['extra-context']) }] : []),
+      ...(options.additionalModels ?? []),
+    ];
+    const seen = new Set([options.model]);
+    for (const extra of additionalModels) {
+      if (!listed.data?.some(item => item.id === extra.model)) throw new Error('Extra model is not listed by this endpoint.');
+      if (seen.has(extra.model)) throw new Error('Extra model must differ from the default model and other extra models.');
+      if (!Number.isInteger(extra.contextWindow) || extra.contextWindow < 4096) throw new Error('Context must be an integer >=4096.');
+      seen.add(extra.model);
     }
     // Ordinary reconnects resolve to an explicit saved endpoint. Revalidate the
     // Strata capability rather than silently dropping screenshot support.
