@@ -81,6 +81,24 @@ PARAMETER num_ctx 131072
 然后在 OllamaForge 运行 `npm run launch:macos-harness -- --with-abliterated`。
 选择器会加入该模型及其实际量化，当前默认模型继续用于新对话。
 
+也可以给已导入的 Huihui INT4 模型加上 DFlash2 草稿。将 Inco AI 的
+[草稿权重与配置](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2/tree/015e795645c74b1a0eeef3b570031fb62e769bc5)
+下载到 `dflash2` 目录，并在其上一级目录保存 `Modelfile.dflash2`。
+
+```text
+FROM huihui-qwen3.8-27b-abliterated-mlx-128k:latest
+DRAFT ./dflash2
+PARAMETER num_ctx 131072
+PARAMETER draft_num_predict 7
+```
+
+```sh
+ollama create huihui-qwen3.8-27b-abliterated-mlx-dflash2-128k -f Modelfile.dflash2 --draft-quantize nvfp4
+npm run launch:macos-harness -- --with-abliterated --with-abliterated-dflash2
+```
+
+加速版复用原 INT4 主权重，草稿单独量化为 NVFP4。两个版本均可从选择器选用。
+
 用相同的短提示、约 3 万 tokens 长提示、连续追问和工具调用测试已安装模型：
 
 ```sh

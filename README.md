@@ -91,6 +91,25 @@ In that directory run `ollama create huihui-qwen3.8-27b-abliterated-mlx-128k -f 
 Then run `npm run launch:macos-harness -- --with-abliterated` from OllamaForge.
 The picker adds the model and its actual quantization while retaining the current default.
 
+To add DFlash2 to the imported Huihui INT4 model, download Inco AI's
+[draft weights and config](https://huggingface.co/incoai/Qwen3.8-27B-DFlash2/tree/015e795645c74b1a0eeef3b570031fb62e769bc5)
+into `dflash2` and save `Modelfile.dflash2` in its parent directory.
+
+```text
+FROM huihui-qwen3.8-27b-abliterated-mlx-128k:latest
+DRAFT ./dflash2
+PARAMETER num_ctx 131072
+PARAMETER draft_num_predict 7
+```
+
+```sh
+ollama create huihui-qwen3.8-27b-abliterated-mlx-dflash2-128k -f Modelfile.dflash2 --draft-quantize nvfp4
+npm run launch:macos-harness -- --with-abliterated --with-abliterated-dflash2
+```
+
+The accelerated variant shares the INT4 target weights. Only the draft uses
+NVFP4. Both variants are available in the picker.
+
 Compare installed models with identical short prompts, roughly 30K-token
 prompts, follow-up requests, and an autonomous tool round trip:
 
