@@ -137,11 +137,12 @@ function harnessModelName(model) {
   const id = model.model.replace(/:latest$/, '');
   const details = model.modelDetails ?? {};
   let title = id;
-  if (/^qwen3\.8(?:-codex(?:-|$)|:27b(?:-|$))/i.test(id)) title = 'Qwen 3.8 27B';
+  if (/^huihui-qwen3\.8-27b-abliterated(?:-|$)/i.test(id)) title = 'Huihui Qwen 3.8 27B Abliterated';
+  else if (/^qwen3\.8(?:-codex(?:-|$)|:27b(?:-|$))/i.test(id)) title = 'Qwen 3.8 27B';
   else if (/^qwen3\.5(?:-codex-fast(?:-|$)|:9b(?:-|$))/i.test(id)) title = 'Qwen 3.5 9B';
   if (title === id && !model.modelDetails) return `${id} (local)`;
   const quantization = details.quantization_level?.toUpperCase();
-  const quant = quantization === 'NVFP4' ? 'NVFP4（4-bit）' : quantization ?? '量化未报告';
+  const quant = ['NVFP4', 'INT4'].includes(quantization) ? `${quantization}（4-bit）` : quantization ?? '量化未报告';
   const backend = /dflash2/i.test(id) ? `${details.format === 'gguf' ? 'GGUF' : 'MLX'} + DFlash2`
     : /mlx/i.test(id) ? 'MLX' : details.format === 'gguf' ? 'GGUF' : details.runner ?? details.format;
   const context = model.contextWindow % 1024 === 0 ? `${model.contextWindow / 1024}K` : `${model.contextWindow} tokens`;

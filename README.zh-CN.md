@@ -66,6 +66,21 @@ npm run setup:macos-harness -- --model qwen3.8:27b-dflash2-nvfp4
 不同后端使用各自的 128K/64K 别名，共享已有权重；普通启动和桌面快捷方式会记住
 已选后端。配置命令本身不下载模型，不改 Codex 的云端设置。
 
+可选的 Huihui Qwen 3.8 27B Abliterated 使用 [MLX 4-bit affine 权重](https://huggingface.co/daguoagi/Huihui-Qwen3.8-27B-abliterated-MLX-4bit/tree/04e51e1be8e1388f38fff8ec567a6e3277769e76)。
+将权重和配置下载到 `mlx` 目录，并把下列 `Modelfile` 放在其上一级目录。
+
+```text
+FROM ./mlx
+TEMPLATE {{ .Prompt }}
+RENDERER qwen3.8
+PARSER qwen3.5
+PARAMETER num_ctx 131072
+```
+
+在同一目录运行 `ollama create huihui-qwen3.8-27b-abliterated-mlx-128k -f Modelfile`，
+然后在 OllamaForge 运行 `npm run launch:macos-harness -- --with-abliterated`。
+选择器会加入该模型及其实际量化，当前默认模型继续用于新对话。
+
 用相同的短提示、约 3 万 tokens 长提示、连续追问和工具调用测试已安装模型：
 
 ```sh

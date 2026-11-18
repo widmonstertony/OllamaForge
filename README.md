@@ -75,6 +75,22 @@ Each backend has separate 128K/64K aliases sharing installed weights. Ordinary
 launches and the desktop shortcut remember the chosen backend. Setup itself
 does not download weights or change Codex's cloud settings.
 
+To add Huihui Qwen 3.8 27B Abliterated as an option, download the
+[MLX 4-bit affine weights](https://huggingface.co/daguoagi/Huihui-Qwen3.8-27B-abliterated-MLX-4bit/tree/04e51e1be8e1388f38fff8ec567a6e3277769e76)
+to a directory called `mlx` and save this `Modelfile` in its parent directory.
+
+```text
+FROM ./mlx
+TEMPLATE {{ .Prompt }}
+RENDERER qwen3.8
+PARSER qwen3.5
+PARAMETER num_ctx 131072
+```
+
+In that directory run `ollama create huihui-qwen3.8-27b-abliterated-mlx-128k -f Modelfile`.
+Then run `npm run launch:macos-harness -- --with-abliterated` from OllamaForge.
+The picker adds the model and its actual quantization while retaining the current default.
+
 Compare installed models with identical short prompts, roughly 30K-token
 prompts, follow-up requests, and an autonomous tool round trip:
 

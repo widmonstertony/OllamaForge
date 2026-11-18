@@ -13,6 +13,7 @@ const backends = new Map([
   ['qwen3.8:27b-mlx', 'qwen3.8-codex-mlx'],
   ['qwen3.8:27b-dflash2-nvfp4', 'qwen3.8-codex-dflash2'],
 ]);
+const abliterated = { model: 'huihui-qwen3.8-27b-abliterated-mlx-128k:latest', contextWindow: 131072 };
 
 function modelAliases(source) {
   const prefix = backends.get(source);
@@ -107,8 +108,9 @@ function migrateLocalToolMasks() {
 async function main() {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('This deployment targets Apple Silicon macOS.');
   const command = process.argv[2] ?? 'setup';
-  if (!['setup', 'launch'].includes(command)) throw new Error('Use setup or launch, optionally --model <installed model>, --workspace <directory> and --no-open.');
+  if (!['setup', 'launch'].includes(command)) throw new Error('Use setup or launch with optional --model <installed model>, --with-abliterated, --workspace <directory> and --no-open.');
   let noOpen = false;
+  let withAbliterated = false;
   // Ordinary shortcut launches retain the backend selected during setup.
   const saved = savedHarnessOptions(parseHarnessArgs(['launch']));
   let workspace = saved.workspace ?? ROOT;
@@ -116,6 +118,7 @@ async function main() {
   for (let index = 3; index < process.argv.length; index++) {
     const argument = process.argv[index];
     if (argument === '--no-open') noOpen = true;
+    else if (argument === '--with-abliterated') withAbliterated = true;
     else if (argument === '--model' && process.argv[index + 1]) baseModel = process.argv[++index];
     else if (argument === '--workspace' && process.argv[index + 1]) workspace = process.argv[++index];
     else throw new Error('Unknown option: ' + argument);
@@ -132,6 +135,13 @@ async function main() {
   ] : [];
   const additionalModels = previousModels.filter(entry => installed.has(entry.model) &&
     !models.some(selected => selected.model === entry.model));
+  if (withAbliterated && !additionalModels.some(entry => entry.model === abliterated.model)) {
+    if (!installed.has(abliterated.model)) throw new Error(`Import ${abliterated.model} in Ollama first.`);
+    const info = await localJSON('/api/show', { model: abliterated.model });
+    if (info.details?.format !== 'safetensors') throw new Error(`${abliterated.model} requires MLX safetensors weights.`);
+    if (!/^num_ctx\s+131072$/m.test(info.parameters ?? '')) throw new Error(`${abliterated.model} must have PARAMETER num_ctx 131072.`);
+    additionalModels.push(abliterated);
+  }
   migrateLocalToolMasks();
   const options = {
     command: 'launch', port: 3080, workspace, noOpen,
