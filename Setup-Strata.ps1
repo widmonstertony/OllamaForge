@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$Install,
+    [switch]$Abliterated,
+    [string]$ModelDirectory,
     [switch]$RuntimeOnly,
     [switch]$InfrastructureOnly,
     [switch]$EnableStartup,
@@ -9,7 +11,17 @@ param(
     [string]$DataDirectory
 )
 $ErrorActionPreference = 'Stop'
+if (($Abliterated -and -not $Install) -or ($ModelDirectory -and -not $Abliterated)) { throw 'Use -Install -Abliterated for SC117 model deployment.' }
+if ($Abliterated) {
+    $installReceipt = Join-Path $PSScriptRoot '.runtime\strata-sc117-install.json'
+    if (-not $DataDirectory -and (Test-Path -LiteralPath $installReceipt)) {
+        $last = Get-Content -LiteralPath $installReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
+        $DataDirectory = $last.dataDirectory
+        if (-not $ModelDirectory) { $ModelDirectory = $last.modelDirectory }
+    }
+}
 if (-not $DataDirectory) { $DataDirectory = Join-Path (Split-Path $PSScriptRoot -Parent) 'Strata-data' }
+$DataDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDirectory)
 $stateDir = Join-Path $env:LOCALAPPDATA 'OllamaForge'
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
 
@@ -34,10 +46,22 @@ if (-not $strata -and $Install) {
 if ($Install) {
     if (-not $strata) { throw 'Strata Terminal was not installed.' }
     Write-Host ("IQ3_S profile: {0:N1} GiB RAM; {1}; expert RAM budget {2} GiB." -f $hardware.RamGiB, $hardware.GpuName, $hardware.ResidentBudgetGiB)
-    & $strata launch --family qwen --model iq3_s --context 128k --kv q4_0 --mtp off --drafting off `
-        --gpus $hardware.GpuIndex --vision cpu --parallel 1 --set "vram-reserve-mib=$($hardware.VramReserveMiB)" --set "resident-budget-gib=$($hardware.ResidentBudgetGiB)" --access local --port 8080 --data-dir $DataDirectory `
+    if ($Abliterated) {
+        . (Join-Path $PSScriptRoot 'Strata-Abliterated.ps1')
+        if (-not $ModelDirectory) { $ModelDirectory = Join-Path $DataDirectory 'models\SC117-Qwen3.8-Flash-Next-GSQ-RCO-abliterated\IQ3_S' }
+        $ModelDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ModelDirectory)
+        Install-StrataAbliterated $strata $node $hardware $DataDirectory $ModelDirectory
+        New-Item -ItemType Directory -Path (Split-Path $installReceipt) -Force | Out-Null
+        $receipt = @{dataDirectory=$DataDirectory; modelDirectory=$ModelDirectory} | ConvertTo-Json
+        $tempReceipt = $installReceipt + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+        [IO.File]::WriteAllText($tempReceipt,$receipt)
+        Move-Item -Force -LiteralPath $tempReceipt -Destination $installReceipt
+    } else {
+        & $strata launch --family qwen --model iq3_s --context 128k --kv q4_0 --mtp off --drafting off `
+        --gpu $hardware.GpuIndex --vision cpu --parallel 1 --set "vram-reserve-mib=$($hardware.VramReserveMiB)" --set "resident-budget-gib=$($hardware.ResidentBudgetGiB)" --access local --port 8080 --data-dir $DataDirectory `
         --save-preset 'Codex IQ3_S 128K' --yes --no-tui
-    if ($LASTEXITCODE -ne 0) { throw "Strata installation failed: $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "Strata installation failed: $LASTEXITCODE" }
+    }
 } elseif ($RuntimeOnly -and -not $InfrastructureOnly -and -not (Test-Strata)) {
     if (-not $strata) { throw 'Strata is missing. Run npm run download:strata once.' }
     $planText = (& $strata launch --preset 'Codex IQ3_S 128K' --plan --no-tui --output json | Out-String)
@@ -119,6 +143,16 @@ if (-not $RuntimeOnly -and -not $InfrastructureOnly) {
 }
 if ($EnableStartup) {
     & (Join-Path $PSScriptRoot 'Install-StrataStartup.ps1')
+}
+if ($Abliterated) {
+    $harnessArgs = @('launch','--no-open')
+    $connectionFile = Join-Path $PSScriptRoot '.runtime\deepseek-harness\connection.json'
+    $current = if (Test-Path -LiteralPath $connectionFile) { Get-Content -Raw -Encoding UTF8 -LiteralPath $connectionFile | ConvertFrom-Json }
+    if ($current.baseURL -ne 'http://127.0.0.1:8080/v1' -or $current.model -ne 'qwen3.8-flash-next-iq3_s' -or $current.contextWindow -ne 131072) {
+        $harnessArgs += @('--base-url','http://127.0.0.1:8080/v1','--model','qwen3.8-flash-next-iq3_s','--context','131072')
+    }
+    & $node (Join-Path $PSScriptRoot 'deepseek-harness.mjs') @harnessArgs
+    if ($LASTEXITCODE) { throw 'DeepSeek Harness startup failed.' }
 }
 if ($InfrastructureOnly) { Write-Host 'Ready: Ollama and the loopback bridge. Local model loading is independent.' }
 else { Write-Host 'Ready: Strata - Qwen3.8 Flash 128K (IQ3_S). The cloud default is preserved.' }

@@ -160,6 +160,55 @@ if ($RuntimeOnly) {
     }
     if ((Get-StrataTerminalPath -Roots @((Join-Path $testRoot 'missing'), $terminal)) -ne (Join-Path $terminal '0.1.49.2\bin\strata.ps1')) { throw 'Version discovery must work with spaces and ignore non-version folders.' }
     Write-Host 'PASS: Node version policy, 64/128GB RAM, multi-GPU selection, incompatible hardware and custom installation paths.'
+    & {
+        . (Join-Path $PSScriptRoot 'Strata-Abliterated.ps1')
+        $dataRoot = Join-Path $testRoot ('other SSD ' + [char]0x6A21)
+        $customModels = Join-Path $testRoot ('external model ' + [char]0x578B)
+        $fixtureFirst = Join-Path $customModels 'Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf'
+        $state = @{online=$false; calls=0; wrong=$false}
+        function New-Object {
+            param($TypeName,$ArgumentList)
+            if ($TypeName -ne 'Threading.Mutex') { throw "Unexpected fixture constructor: $TypeName" }
+            return [Threading.Mutex]::new($false)
+        }
+        function Get-ScheduledTask { param($TaskName,$ErrorAction) }
+        function Invoke-RestMethod {
+            param($Uri,$TimeoutSec)
+            if (-not $state.online) { throw 'Offline fixture' }
+            if ($Uri -like '*/props?*') {
+                if ($state.wrong) { return @{model_path='stock.gguf'} }
+                return @{model_path=$fixtureFirst}
+            }
+            if ($Uri -like '*/health') { return @{service='strata';model='qwen3.8-flash-next-iq3_s';loaded=$true;max_context=131072} }
+            return @{engine=@{context=131072;model='qwen3.8-flash-next-iq3_s';kv='q4_0';drafting='off';cvec=0};live=@{state='idle';queued=0}}
+        }
+        $stage = {
+            if ($args[1] -ne $customModels) { throw 'Model folder was not forwarded as one argument.' }
+            $global:LASTEXITCODE = 0
+        }
+        $launch = {
+            $global:LASTEXITCODE = 0
+            if ($args -contains '--plan') {
+                return (@{ok=$true;plan=@{model=@{own_files=$true};settings=@{model_path=$fixtureFirst;context=131072;kv='q4_0';mtp='off';drafting='off'};download=@{gb=0;parts=@();engine_usable=$true}}} | ConvertTo-Json -Depth 8 -Compress)
+            }
+            $flag = [array]::IndexOf($args,'--model-path')
+            if ($flag -lt 0 -or $args[$flag+1] -ne $fixtureFirst) { throw 'A stock or missing model path reached Strata.' }
+            foreach ($entry in @(@('--context','128k'),@('--kv','q4_0'),@('--mtp','off'),@('--drafting','off'),@('--gpu','1'))) {
+                $i = [array]::IndexOf($args,$entry[0])
+                if ($i -lt 0 -or $args[$i+1] -ne $entry[1]) { throw "Wrong launch option $($entry[0])" }
+            }
+            if ($args -notcontains 'resident-budget-gib=48') { throw 'Target RAM budget was not applied.' }
+            $state.online=$true; $state.calls++
+        }
+        Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels
+        Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels
+        if ($state.calls -ne 1) { throw 'A verified identical deployment restarted the model.' }
+        $state.online=$false; $state.wrong=$true
+        $failed=$false
+        try { Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels } catch { $failed=$_.Exception.Message -like '*verified baked weights*' }
+        if (-not $failed) { throw 'A stock backend using the same alias must not pass readiness.' }
+        Write-Host 'PASS: clean SC117 deployment, custom paths, multi-GPU settings, repeat install and wrong-weight detection.'
+    }
     $env:STRATA_RUNTIME_DIR = $physical
     $token = 'a' * 64
     $name = 'launch-codex-iq3_s-128k-' + ('b' * 32) + '.ready.json'

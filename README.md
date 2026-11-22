@@ -192,6 +192,22 @@ can retain the independent OpenClaw and DeepSeek Harness connections below.
 
 ## Strata IQ3_S 128K on Windows
 
+### One-command SC117 Abliterated deployment
+
+On Windows x64, install a supported Node version (24.22.1+ on 24.x or 26.12.1+ on 26.x), the Codex-capable Ollama release and an NVIDIA driver. Open Codex once. Allow about 90 GiB free on SSD for a fresh install. The hardware check requires at least 60 GiB system RAM and an NVIDIA GPU with at least 11 GiB reported VRAM.
+
+~~~powershell
+npm run deploy:strata-abliterated
+~~~
+
+This deploys SC117's baked Qwen3.8 Flash Next IQ3_S, registers the login task, connects the local Codex profile and starts Chinese DeepSeek Harness with the **DeepSeek + Strata** desktop shortcut. Existing Strata clients (including OpenClaw and JARVIS) keep the same local model ID. For their optional first-time setup, see the assistants section below.
+
+The default data directory is **Strata-data beside the checkout**. Pass `-DataDirectory` to select another SSD. Pass `-ModelDirectory` to use a folder containing the two original SC117 GGUF filenames. For example, `npm run deploy:strata-abliterated -- -DataDirectory "E:\AI data" -ModelDirectory "E:\Models\SC117\IQ3_S"`. The installer verifies both SHA-256 digests from a pinned revision, resumes incomplete downloads and builds a separate pack. It keeps existing weights. Context is 131,072 tokens, KV is Q4_0, MTP and drafting are off, and the baked model needs no external control vector. GPU selection and resident memory budget are calculated on the target machine.
+
+[Model files at the pinned revision](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF/tree/90a3350cd800ec1fe0d1660a38414ad9e985782f/IQ3_S)
+
+### Other Strata commands
+
 ~~~powershell
 npm run check:strata
 npm run download:strata -- -EnableStartup

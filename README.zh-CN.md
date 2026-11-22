@@ -170,6 +170,22 @@ OpenClaw 和 DeepSeek Harness，它们独立于原生云端模型目录。
 
 ## Windows Strata IQ3_S 128K
 
+### 一键部署 SC117 Abliterated
+
+在 Windows x64 上安装受支持的 Node（24.x 至少 24.22.1，或 26.x 至少 26.12.1）、支持 Codex 网关的 Ollama 和 NVIDIA 驱动，并打开过一次 Codex。全新部署建议 SSD 预留 90 GiB。硬件检查要求系统报告至少 60 GiB 内存，至少一张 NVIDIA 显卡报告 11 GiB 显存。
+
+~~~powershell
+npm run deploy:strata-abliterated
+~~~
+
+命令部署 SC117 的 Qwen3.8 Flash Next Abliterated IQ3_S，注册登录启动任务，接好 Codex 本地配置，启动中文 DeepSeek Harness，并创建 **DeepSeek + Strata** 桌面快捷方式。已接入 Strata 的 OpenClaw、JARVIS 等客户端沿用同一个本地模型 ID。首次接入这两个可选客户端见下方助手章节。
+
+数据默认存放在与仓库同级的 **Strata-data**。可以用 `-DataDirectory` 选择其他 SSD，也可以用 `-ModelDirectory` 指向存有两个原名 SC117 分片的目录。例如 `npm run deploy:strata-abliterated -- -DataDirectory "E:\AI data" -ModelDirectory "E:\Models\SC117\IQ3_S"`。安装器按固定版本的 SHA-256 校验两个文件，支持断点续传，单独建立 pack，保留已有权重。上下文 131,072，KV 为 Q4_0，MTP 和 drafting 关闭。消融已写入权重，显卡和常驻内存预算按目标机器选择。
+
+[固定版本的模型分片](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF/tree/90a3350cd800ec1fe0d1660a38414ad9e985782f/IQ3_S)
+
+### 其他 Strata 命令
+
 ~~~powershell
 npm run check:strata
 npm run download:strata -- -EnableStartup

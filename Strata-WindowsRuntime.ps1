@@ -24,7 +24,9 @@ namespace OllamaForge {
 
 function Get-OllamaForgeBackgroundAction([string]$Runner, [string]$StateDirectory = (Join-Path $env:LOCALAPPDATA 'OllamaForge')) {
     $source = Join-Path $PSScriptRoot 'Strata-BackgroundHost.cs'
-    $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($source))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
     $directory = Join-Path $StateDirectory ('background-host\' + $hash.Substring(0,16))
     $executable = Join-Path $directory 'OllamaForge.BackgroundHost.exe'
     if (-not (Test-Path -LiteralPath $executable)) {

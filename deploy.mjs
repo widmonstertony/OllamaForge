@@ -46,17 +46,18 @@ function findCommand(name, platform = process.platform) {
 
 export async function sha256File(filePath) {
   const hash = crypto.createHash('sha256');
-  await pipeline(fs.createReadStream(filePath), hash);
+  await pipeline(fs.createReadStream(filePath, { highWaterMark: 4 * 1024 ** 2 }), hash);
   return hash.digest('hex');
 }
 
-export async function verifyTargetFile(filePath) {
+export async function verifyTargetFile(filePath, target = TARGET) {
   if (!fs.existsSync(filePath)) return false;
-  if (fs.statSync(filePath).size !== TARGET.bytes) return false;
-  return (await sha256File(filePath)) === TARGET.sha256;
+  if (fs.statSync(filePath).size !== target.bytes) return false;
+  return (await sha256File(filePath)) === target.sha256;
 }
 
 export async function ensureTargetFile({
+  target = TARGET,
   targetPath = path.join(rootDir, TARGET.relativePath),
   curl = findCommand(process.platform === 'win32' ? 'curl.exe' : 'curl'),
   availableBytes = () => {
@@ -66,7 +67,7 @@ export async function ensureTargetFile({
   runCommand = run,
 } = {}) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  if (await verifyTargetFile(targetPath)) {
+  if (await verifyTargetFile(targetPath, target)) {
     console.log(`Model already verified: ${targetPath}`);
     return targetPath;
   }
@@ -75,28 +76,32 @@ export async function ensureTargetFile({
     fs.renameSync(targetPath, invalidPath);
     console.warn(`Existing model failed verification and was preserved at: ${invalidPath}`);
   }
-  if (!curl) throw new Error('curl was not found. Install curl or use a current Windows/macOS release.');
   const partialPath = `${targetPath}.partial`;
-  if (fs.existsSync(partialPath) && fs.statSync(partialPath).size >= TARGET.bytes && !(await verifyTargetFile(partialPath))) {
+  if (fs.existsSync(partialPath) && fs.statSync(partialPath).size >= target.bytes) {
+    if (await verifyTargetFile(partialPath, target)) {
+      fs.renameSync(partialPath, targetPath);
+      return targetPath;
+    }
     const invalidPartial = `${partialPath}.invalid-${Date.now()}`;
     fs.renameSync(partialPath, invalidPartial);
     console.warn(`Invalid completed download was preserved at: ${invalidPartial}`);
   }
+  if (!curl) throw new Error('curl was not found. Install curl or use a current Windows/macOS release.');
   const partialBytes = fs.existsSync(partialPath) ? fs.statSync(partialPath).size : 0;
-  const requiredBytes = Math.max(0, TARGET.bytes - partialBytes) + (2 * 1024 ** 3);
+  const requiredBytes = Math.max(0, target.bytes - partialBytes) + (2 * 1024 ** 3);
   if (availableBytes() < requiredBytes) {
-    throw new Error(`Not enough disk space for the IQ4_XS model. At least ${(requiredBytes / (1024 ** 3)).toFixed(1)} GiB free is required.`);
+    throw new Error(`Not enough disk space for ${path.basename(targetPath)}. At least ${(requiredBytes / (1024 ** 3)).toFixed(1)} GiB free is required.`);
   }
-  console.log(`Downloading ${(TARGET.bytes / (1024 ** 3)).toFixed(2)} GiB IQ4_XS model (resume enabled)...`);
+  console.log(`Downloading ${path.basename(targetPath)} (${(target.bytes / (1024 ** 3)).toFixed(2)} GiB, resume enabled)...`);
   runCommand(curl, [
     '--location', '--fail', '--retry', '5', '--retry-delay', '5', '--connect-timeout', '30',
-    '--continue-at', '-', '--output', partialPath, TARGET.url,
+    '--continue-at', '-', '--output', partialPath, target.url,
   ]);
-  if (!(await verifyTargetFile(partialPath))) {
+  if (!(await verifyTargetFile(partialPath, target))) {
     throw new Error(`Downloaded model failed size or SHA-256 verification: ${partialPath}`);
   }
   fs.renameSync(partialPath, targetPath);
-  console.log(`Model verified: ${TARGET.sha256}`);
+  console.log(`Model verified: ${target.sha256}`);
   return targetPath;
 }
 

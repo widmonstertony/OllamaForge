@@ -75,6 +75,9 @@
 !strata-config.mjs
 !strata-setup.mjs
 !Setup-Strata.ps1
+!Strata-Abliterated.ps1
+!strata-abliterated.mjs
+!test-strata-abliterated.mjs
 !Strata-WindowsRuntime.ps1
 !Strata-BackgroundHost.cs
 !Run-StrataBridge.ps1
