@@ -51,10 +51,41 @@ assert.equal(calls, 1, 'A failed summary must not become 30 more model requests.
 tokens = 120200;
 await assert.rejects(() => guarded.compactIfNeeded(agent, 'pressure'));
 assert.equal(calls, 2, 'Retry only after substantial new history.');
-assert.equal(state.decision(agent.session, 121000, 131072, 8192), 'stop');
+assert.equal(state.decision(agent.session, 121000, 131072, 8192), 'attempt');
 await assert.rejects(() => guarded.compactIfNeeded(agent, 'context-overflow'));
 assert.equal(calls, 3, 'The separate, bounded upstream overflow recovery is retained.');
 assert.equal(state.decision({}, tokens, 131072, 8192), 'attempt', 'No state leaks to another session.');
+
+const selection = { provider: 'ollamaforge-local', model: 'test-local' };
+const owner = { session: { requestHeader: () => ({ config: selection }) } };
+const input = { messages: [
+  { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Keep the existing project' }] },
+  { role: 'assistant', content: [{ type: 'reasoning', text: 'hidden reasoning' }, { type: 'tool-call', name: 'write' }] },
+  { role: 'tool', content: [{ type: 'image', data: 'image bytes' }, { type: 'text', text: 'Saved file A' }] },
+] };
+let summaryCalls = 0, failure = Object.assign(new Error('truncated'), { code: 'MAX_TOKENS' });
+class TruncatedSummary {
+  async summarize() { summaryCalls++; throw failure; }
+}
+const Summarizer = createGuardedEngine(TruncatedSummary, async () => ({ tokens, window: 131072, output: 8192 }));
+const summarizer = new Summarizer();
+for (const size of [112000, 126000]) {
+  tokens = size;
+  const checkpoint = await summarizer.summarize(input, owner);
+  assert.match(checkpoint.summary[0].text, /Keep the existing project/);
+  assert.match(checkpoint.summary[0].text, /tool call write/);
+  assert.match(checkpoint.summary[0].text, /Saved file A/);
+  assert.doesNotMatch(checkpoint.summary[0].text, /hidden reasoning|image bytes/);
+  assert.equal(checkpoint.llmStreamCall, undefined);
+}
+assert.equal(summaryCalls, 1, 'At the hard limit no second summary request is made.');
+await assert.rejects(() => summarizer.summarize(input, owner, AbortSignal.abort()), { name: 'AbortError' });
+tokens = 112000;
+failure = new Error('connection refused');
+await assert.rejects(() => summarizer.summarize(input, owner), /connection refused/);
+selection.provider = 'cloud';
+failure = Object.assign(new Error('truncated'), { code: 'MAX_TOKENS' });
+await assert.rejects(() => summarizer.summarize(input, owner), /truncated/);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'of-recovery-'));
 try {

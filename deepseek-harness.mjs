@@ -172,7 +172,7 @@ export function buildHarnessPatch(connection) {
       { id: 'ollamaforge-browser-use', name: '@deepseek-ai/dsh-browser-use' },
       { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
     ] },
-    { id: 'compaction-basic', name: pathToFileURL(path.join(ROOT, 'deepseek-compaction.mjs')).href, config: {
+    { id: 'compaction-basic', config: {
       modelPolicies: models.map(model => ({ provider: 'ollamaforge-local', model: model.model, ...localCompactionPolicy(model.contextWindow) })),
     } },
   ];
@@ -269,7 +269,8 @@ export async function connectHarness(options) {
   // engine. No upstream package files or unrelated preset fields are edited.
   const webSource = run(process.execPath, [BIN, 'web', '--patch', PATCH, '--dump-config'], { env: environment(), maxBuffer: 8 * 1024 * 1024 }).stdout;
   const webTree = yaml.load(webSource, { schema });
-  const replacement = JSON.parse(patch).find(row => row.id === 'compaction-basic');
+  const replacement = { ...JSON.parse(patch).find(row => row.id === 'compaction-basic'),
+    name: pathToFileURL(path.join(ROOT, 'deepseek-compaction.mjs')).href };
   const presets = webTree.filter(row => row.name === '@deepseek-ai/dsh-agent-preset')
     .map(row => rewriteCompactionTree(row, replacement));
   if (!presets.some(row => row.config?.id === 'standard')) throw new Error('Cannot locate the standard Web preset; refusing incomplete context tuning.');
@@ -277,6 +278,14 @@ export async function connectHarness(options) {
     const guards = [
       { id, inject: [dependency, 'ollamaforgeNativeReady'] },
     ];
+    if (profile === 'headless') {
+      // The patch loader treats "name" as a match condition, not a rename.
+      const source = run(process.execPath, [BIN, profile, '--dump-config'], { env: environment() }).stdout;
+      const original = yaml.load(source, { schema }).find(row => row.id === 'compaction-basic');
+      if (original?.name !== '@deepseek-ai/dsh-compaction-basic') throw new Error('Cannot locate the headless compaction engine.');
+      const local = rewriteCompactionTree(original, replacement);
+      guards.push({ id: original.id, disabled: true }, { insert: [{ ...local, id: 'ollamaforge-headless-compaction' }] });
+    }
     if (profile === 'web') {
       guards[0].inject.push('ollamaforgeRestartGuardReady');
       guards.push({ insert: [{ id: 'ollamaforge-restart-guard', name: pathToFileURL(path.join(ROOT, 'deepseek-restart-guard.mjs')).href }] });
@@ -291,6 +300,11 @@ export async function connectHarness(options) {
   }
   const composed = run(process.execPath, args('headless', ['--dump-config']), { env: environment(), maxBuffer: 8 * 1024 * 1024 }).stdout;
   if (!composed.includes('ollamaforge-local')) throw new Error('Harness did not compose the local provider.');
+  const entries = yaml.load(composed, { schema });
+  if (!entries.find(row => row.id === 'compaction-basic')?.disabled ||
+      !entries.some(row => row.id === 'ollamaforge-headless-compaction' && row.name === replacement.name)) {
+    throw new Error('Harness did not compose the local compaction engine.');
+  }
   console.log(`Connected DeepSeek Harness ${DSH_VERSION}: ${connection.model}, ${connection.contextWindow} tokens, ${connection.baseURL}`);
   return connection;
 }
