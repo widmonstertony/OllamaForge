@@ -40,6 +40,8 @@
 !DESKTOP-CONTROL.md
 !deepseek-harness.mjs
 !deepseek-local-tools.mjs
+!deepseek-strata-tools.mjs
+!test-deepseek-latency.mjs
 !deepseek-restart-guard.mjs
 !strata-assistants.mjs
 !codex-app-server.mjs

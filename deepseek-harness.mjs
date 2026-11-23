@@ -161,6 +161,7 @@ export function buildHarnessPatch(connection) {
   const models = [connection, ...(connection.additionalModels ?? [])];
   const controls = connection.toolProfile === 'local-controls' ? [{ id: 'ollamaforge-local-controls', name: pathToFileURL(path.join(ROOT, 'deepseek-local-tools.mjs')).href }] : [];
   const nativeBrowser = connection.browserMode === 'native';
+  const strataTools = connection.baseURL === 'http://127.0.0.1:8080/v1' && connection.model === 'qwen3.8-flash-next-iq3_s' && !controls.length;
   return [
     { id: 'llm-pi-ai', config: { providers: { 'ollamaforge-local': {
       displayName: 'OllamaForge Local', apiKeyEnv: LOCAL_KEY, api: connection.api,
@@ -175,6 +176,7 @@ export function buildHarnessPatch(connection) {
       ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoningEffort: 'off' } : {}) } },
     { insert: [
       ...controls,
+      ...(strataTools ? [{ id: 'ollamaforge-strata-tools', name: pathToFileURL(path.join(ROOT, 'deepseek-strata-tools.mjs')).href }] : []),
       { id: 'ollamaforge-computer-use', name: '@deepseek-ai/dsh-computer-use' },
       { id: 'ollamaforge-computer-driver', name: pathToFileURL(path.join(ROOT, 'deepseek-native-provider.mjs')).href,
         ...(nativeBrowser ? { config: { nativeBrowser: true } } : {}) },
@@ -183,6 +185,7 @@ export function buildHarnessPatch(connection) {
         { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
       ]),
     ] },
+    ...(strataTools ? [{ id: 'session-title-llm', disabled: true }] : []),
     { id: 'compaction-basic', config: {
       modelPolicies: models.map(model => ({ provider: 'ollamaforge-local', model: model.model, ...localCompactionPolicy(model.contextWindow) })),
     } },
@@ -256,6 +259,7 @@ export async function connectHarness(options) {
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-migrate-session.mjs')))
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-workspace.mjs')))
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-local-tools.mjs')))
+    .update(fs.readFileSync(path.join(ROOT, 'deepseek-strata-tools.mjs')))
     .update(fs.readFileSync(path.join(ROOT, 'deepseek-restart-guard.mjs'))).digest('hex');
   const settings = JSON.stringify({ ...connection, port: options.port, workspace, sourceHash }, null, 2) + '\n';
   if ((fs.existsSync(PATCH) && fs.readFileSync(PATCH, 'utf8') !== patch) ||
@@ -391,7 +395,7 @@ async function prepareIdleRestart(pid) {
   const settings = JSON.parse(fs.readFileSync(SETTINGS, 'utf8'));
   if (pid == null) {
     try {
-      const probe = await fetch('http://127.0.0.1:' + settings.port, { signal: AbortSignal.timeout(2000) });
+      const probe = await fetch('http://127.0.0.1:' + settings.port, { signal: AbortSignal.timeout(10000) });
       await probe.body?.cancel();
     } catch (error) {
       if (error.cause?.code === 'ECONNREFUSED') return;
@@ -463,8 +467,9 @@ export function testHarness() {
   console.log(`PASS: official DeepSeek Harness + local model read a fresh marker, wrote result.txt and replied with it. Evidence: ${directory}`);
 }
 
-export function runHarnessTask(task, cwd) {
-  return new Promise((resolve, reject) => execFile(process.execPath, args('headless', ['--json', task]), {
+export function runHarnessTask(task, cwd, sessionId) {
+  const selection = sessionId ? ['--session-id', sessionId] : [];
+  return new Promise((resolve, reject) => execFile(process.execPath, args('headless', [...selection, '--json', task]), {
     cwd, env: { ...environment(), DSH_HOME: path.join(cwd, '.harness-home') }, windowsHide: true, timeout: 600000, maxBuffer: 8 * 1024 * 1024,
   }, (error, stdout, stderr) => {
     fs.writeFileSync(path.join(cwd, 'events.jsonl'), stdout);
@@ -480,7 +485,7 @@ export function auditControlEvents(events, id, receipts) {
   const nativeType = calls.some(call => /cua_driver_native__type_text$/.test(call.tool) && call.input?.text === `NATIVE_${id}`);
   const chromeClick = calls.some(call => /chrome-devtools-mcp__click$/.test(call.tool));
   const substituted = calls.some(call => /chrome-devtools-mcp__fill$/.test(call.tool) && call.input?.value?.includes(`NATIVE_${id}`));
-  const unexpected = calls.some(call => !/^(?:cua_driver_native__|mcp__chrome-devtools-mcp__)/.test(call.tool) || /__(?:evaluate_script|navigate_page)$/.test(call.tool));
+  const unexpected = calls.some(call => call.tool !== 'load_tools' && (!/^(?:cua_driver_native__|mcp__chrome-devtools-mcp__)/.test(call.tool) || /__(?:evaluate_script|navigate_page)$/.test(call.tool)));
   const final = events.findLast(event => event.type === 'final');
   return { nativeClick, nativeType, chromeClick, substituted, unexpected,
     allPassed: !!(receipts.native?.passed && receipts.chrome?.passed && nativeClick && nativeType && chromeClick && !substituted && !unexpected && final?.text?.includes('NATIVE_AND_CHROME_PASS')) };

@@ -36,13 +36,21 @@ function Install-StrataAbliterated($Terminal, $Node, $Hardware, [string]$DataDir
                 if ($sources[$i].name -ne $weights[$i].Name -or $sources[$i].size -ne $weights[$i].Length) { throw "Pack source mismatch in $pack" }
             }
         }
+        $tuning = [ordered]@{'resident-budget-gib'=$Hardware.ResidentBudgetGiB; 'conversation-cache-min-tokens'=1024}
+        if ($Hardware.GpuName -match 'RTX 4090 Laptop GPU' -and $Hardware.CpuName -match 'i9-13950HX' -and
+            $Hardware.RamGiB -ge 60 -and $Hardware.RamGiB -le 65) {
+            $tuning['resident-budget-gib'] = 36
+            $tuning['prefill'] = 8192
+            $tuning['pcie-frac'] = 0
+        }
         $launch = @('launch','--family','qwen','--model','iq3_s','--model-path',$first,'--data-dir',$runtime,
             '--context','128k','--kv','q4_0','--mtp','off','--drafting','off','--vision','cpu','--parallel','1',
             '--access','local','--port','8080','--gpu',[string]$Hardware.GpuIndex,
-            '--set',"resident-budget-gib=$($Hardware.ResidentBudgetGiB)",'--set',"vram-reserve-mib=$($Hardware.VramReserveMiB)",
+            '--set',"vram-reserve-mib=$($Hardware.VramReserveMiB)",
             '--set','adapt-async=1','--set','STRATA_PIN_BY_NEED=1','--set','STRATA_IQ3S_MT1=1',
-            '--set','conversation-cache-slots=2','--set','conversation-cache-mib=2560','--set','conversation-cache-min-tokens=8192',
+            '--set','conversation-cache-slots=2','--set','conversation-cache-mib=2560',
             '--save-preset',$preset,'--yes','--no-tui')
+        foreach ($entry in $tuning.GetEnumerator()) { $launch += @('--set', "$($entry.Key)=$($entry.Value)") }
         $health = $null
         try { $health = Invoke-RestMethod "$endpoint/health" -TimeoutSec 3 } catch { }
         if ($health) {
@@ -52,6 +60,13 @@ function Install-StrataAbliterated($Terminal, $Node, $Hardware, [string]$DataDir
             if ($LASTEXITCODE) { throw 'Port 8080 is occupied and this checkout has no matching saved preset.' }
             $savedPlan = ($savedJson | Out-String) | ConvertFrom-Json
             $s = $savedPlan.plan.settings
+            $tuningMatches = $true
+            foreach ($entry in $tuning.GetEnumerator()) {
+                $flag = '--' + $entry.Key
+                $value = 0.0
+                if (-not [double]::TryParse([string]$s.extra.$flag, [Globalization.NumberStyles]::Float,
+                    [Globalization.CultureInfo]::InvariantCulture, [ref]$value) -or $value -ne $entry.Value) { $tuningMatches = $false }
+            }
             # Preserve an existing reserve tuned on this GPU when adopting the
             # already-serving baked weights into an explicit own-files preset.
             if ($props.model_path -eq $first -and ($s.gpus -contains $Hardware.GpuIndex -or
@@ -59,7 +74,7 @@ function Install-StrataAbliterated($Terminal, $Node, $Hardware, [string]$DataDir
                 $index = [Array]::IndexOf($launch, "vram-reserve-mib=$($Hardware.VramReserveMiB)")
                 $launch[$index] = "vram-reserve-mib=$($s.extra.'--vram-reserve-mib')"
             }
-            if ($health.service -eq 'strata' -and $health.model -eq $model -and $props.model_path -eq $first -and
+            if ($tuningMatches -and $health.service -eq 'strata' -and $health.model -eq $model -and $props.model_path -eq $first -and
                 $metrics.engine.context -eq 131072 -and $metrics.engine.kv -eq 'q4_0' -and $metrics.engine.drafting -eq 'off' -and
                 $metrics.engine.cvec -in @($null,0,'off','none') -and $s.model_path -eq $first -and
                 $s.context -eq 131072 -and $s.kv -eq 'q4_0' -and $s.mtp -eq 'off' -and $s.drafting -eq 'off' -and

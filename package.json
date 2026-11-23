@@ -20,6 +20,7 @@
     "launch:deepseek": "node deepseek-harness.mjs launch",
     "stop:deepseek": "node deepseek-harness.mjs stop",
     "test:deepseek": "node deepseek-harness.mjs test",
+    "test:deepseek-latency": "node test-deepseek-latency.mjs",
     "test:deepseek-controls": "node test-deepseek-controls.mjs",
     "setup:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Setup-Strata.ps1",
     "start:strata": "powershell -NoProfile -ExecutionPolicy Bypass -File Start-StrataBackground.ps1 -Once",

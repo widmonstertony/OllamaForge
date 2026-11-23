@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { parseHarnessArgs, resolveHarnessOptions, validateLocalURL, discoverConnection, buildHarnessPatch, auditControlEvents, withDefaultHarnessLocale } from './deepseek-harness.mjs';
 import { projectNativeResult } from './deepseek-native-provider.mjs';
+import { selectTools, toolPresentation } from './deepseek-strata-tools.mjs';
 import { createRestartHandler } from './deepseek-restart-guard.mjs';
 
 let closedInitiators = 0;
@@ -34,6 +35,15 @@ assert.deepEqual(seededPreference[0], unrelatedPreference[0]);
 assert.deepEqual(seededPreference[1].config, { custom: true, preference: 'zh' });
 assert.equal(withDefaultHarnessLocale(seededPreference), seededPreference, 'Redeployment keeps the saved locale.');
 assert.throws(() => withDefaultHarnessLocale({ locale: 'en' }), /patch list/);
+const names = ['load_tools','read','pwsh','cua_driver_native__click','mcp__chrome-devtools-mcp__fill'];
+const catalog = names.map(name => ({ name, parameters: { type: 'object' } }));
+const session = tools => ({ session: { requestHeader: () => ({ tools }) } });
+assert.deepEqual(toolPresentation(session(catalog.slice(1)), catalog, new Set()), catalog.slice(0, 2));
+assert.deepEqual(toolPresentation(session(catalog), catalog.slice(0, 4), new Set()), catalog.slice(0, 4));
+assert.deepEqual(toolPresentation(session([]), catalog, new Set([names[4]])), [...catalog.slice(0, 2), catalog[4]]);
+assert.deepEqual(toolPresentation(session([]), catalog.slice(3), new Set()), catalog.slice(3), 'A preset that restricts discovery retains its own tools.');
+assert.deepEqual(selectTools(['cua_driver_native', 'chrome', 'github', 'unavailable'], names), [names[3], names[4], 'pwsh']);
+assert.deepEqual(selectTools(['chrome'], ['cua_driver_native__browser_click']), ['cua_driver_native__browser_click']);
 
 assert.equal(parseHarnessArgs(['launch', '--port', '3081', '--no-open']).port, 3081);
 assert.equal(parseHarnessArgs(['launch', '--no-open']).noOpen, true);
@@ -83,6 +93,11 @@ assert.equal(patch[3].config.modelPolicies[0].headroomTokens, 8192);
 assert.equal(patch[3].config.modelPolicies[0].provider, 'ollamaforge-local');
 assert.equal(patch[2].insert.length, 4);
 const controls = buildHarnessPatch({ ...strata, toolProfile: 'local-controls' });
+const iq3 = { ...strata, model: 'qwen3.8-flash-next-iq3_s' };
+const fast = buildHarnessPatch(iq3);
+assert.ok(fast[2].insert.some(row => row.id === 'ollamaforge-strata-tools'));
+assert.ok(fast.some(row => row.id === 'session-title-llm' && row.disabled));
+assert.ok(!buildHarnessPatch({ ...iq3, toolProfile: 'local-controls' })[2].insert.some(row => row.id === 'ollamaforge-strata-tools'));
 assert.ok(controls[2].insert.some(plugin => plugin.name?.endsWith('/deepseek-local-tools.mjs')));
 assert.equal(patch[2].insert[3].config.mode, 'launch');
 assert.equal(patch[2].insert[3].config.headless, false);

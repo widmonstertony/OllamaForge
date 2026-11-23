@@ -159,6 +159,10 @@ if ($RuntimeOnly) {
         Set-Content -LiteralPath (Join-Path $bin 'strata.ps1') -Value '# fixture' -Encoding UTF8
     }
     if ((Get-StrataTerminalPath -Roots @((Join-Path $testRoot 'missing'), $terminal)) -ne (Join-Path $terminal '0.1.49.2\bin\strata.ps1')) { throw 'Version discovery must work with spaces and ignore non-version folders.' }
+    $newBin = New-Item -Type Directory -Path (Join-Path $terminal '0.1.66\bin') -Force
+    $direct = Join-Path $newBin.FullName 'strata-direct.ps1'
+    Set-Content -LiteralPath $direct -Value '# fixture'
+    if ((Get-StrataTerminalPath -Roots @($terminal)) -ne $direct) { throw 'Current official Terminal must win over the legacy launcher.' }
     Write-Host 'PASS: Node version policy, 64/128GB RAM, multi-GPU selection, incompatible hardware and custom installation paths.'
     & {
         . (Join-Path $PSScriptRoot 'Strata-Abliterated.ps1')
@@ -189,7 +193,7 @@ if ($RuntimeOnly) {
         $launch = {
             $global:LASTEXITCODE = 0
             if ($args -contains '--plan') {
-                return (@{ok=$true;plan=@{model=@{own_files=$true};settings=@{model_path=$fixtureFirst;context=131072;kv='q4_0';mtp='off';drafting='off'};download=@{gb=0;parts=@();engine_usable=$true}}} | ConvertTo-Json -Depth 8 -Compress)
+                return (@{ok=$true;plan=@{model=@{own_files=$true};settings=@{model_path=$fixtureFirst;context=131072;kv='q4_0';mtp='off';drafting='off';extra=$state.extra};download=@{gb=0;parts=@();engine_usable=$true}}} | ConvertTo-Json -Depth 8 -Compress)
             }
             $flag = [array]::IndexOf($args,'--model-path')
             if ($flag -lt 0 -or $args[$flag+1] -ne $fixtureFirst) { throw 'A stock or missing model path reached Strata.' }
@@ -197,12 +201,21 @@ if ($RuntimeOnly) {
                 $i = [array]::IndexOf($args,$entry[0])
                 if ($i -lt 0 -or $args[$i+1] -ne $entry[1]) { throw "Wrong launch option $($entry[0])" }
             }
-            if ($args -notcontains 'resident-budget-gib=48') { throw 'Target RAM budget was not applied.' }
+            $state.extra = @{}
+            for ($i = 0; $i -lt $args.Count - 1; $i++) {
+                if ($args[$i] -eq '--set') { $key,$value = $args[$i+1] -split '=',2; $state.extra['--' + $key] = $value }
+            }
+            if ($args -notcontains 'conversation-cache-min-tokens=1024') { throw 'Small conversation cache missing.' }
             $state.online=$true; $state.calls++
         }
         Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels
         Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels
         if ($state.calls -ne 1) { throw 'A verified identical deployment restarted the model.' }
+        if ($state.extra.'--resident-budget-gib' -ne 48 -or $state.extra.ContainsKey('--pcie-frac')) { throw 'Unexpected tuning on the larger PC.' }
+        $state.online = $false
+        $laptop = Get-StrataHardwareProfile 63.6 @(@{Index=1; Name='NVIDIA GeForce RTX 4090 Laptop GPU'; MemoryMiB=16376}) 'AMD64' 'Intel Core i9-13950HX'
+        Install-StrataAbliterated $launch $stage $laptop $dataRoot $customModels
+        if ($state.extra.'--resident-budget-gib' -ne 36 -or $state.extra.'--prefill' -ne 8192 -or $state.extra.'--pcie-frac' -ne '0') { throw 'Missing laptop tuning.' }
         $state.online=$false; $state.wrong=$true
         $failed=$false
         try { Install-StrataAbliterated $launch $stage $largeProfile $dataRoot $customModels } catch { $failed=$_.Exception.Message -like '*verified baked weights*' }

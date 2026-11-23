@@ -125,12 +125,12 @@ function Get-StrataTerminalPath([string[]]$Roots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
         $versions = @(Get-ChildItem -LiteralPath $root -Directory | Where-Object { $_.Name -match '^\d+(\.\d+){1,3}$' } |
             Sort-Object { [version]$_.Name } -Descending)
-        foreach ($version in $versions) {
-            $candidate = Join-Path $version.FullName 'bin\strata.ps1'
-            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        foreach ($folder in (@($versions | ForEach-Object { $_.FullName }) + @(Join-Path $root 'current'))) {
+            foreach ($entry in @('strata-direct.ps1','strata.ps1','strata.cmd')) {
+                $candidate = Join-Path $folder ('bin\' + $entry)
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+            }
         }
-        $current = Join-Path $root 'current\bin\strata.ps1'
-        if (Test-Path -LiteralPath $current) { return $current }
     }
     return $null
 }
@@ -193,7 +193,7 @@ function Assert-OllamaForgeStrataRestart($Health, $Metrics, [switch]$Force) {
     }
 }
 
-function Get-StrataHardwareProfile([double]$RamGiB, [object[]]$Gpus, [string]$Architecture = 'AMD64') {
+function Get-StrataHardwareProfile([double]$RamGiB, [object[]]$Gpus, [string]$Architecture = 'AMD64', [string]$CpuName = '') {
     if ($Architecture -notin @('AMD64','x64')) { throw 'This optional Strata installer requires Windows x64. Use npm run setup for other supported Ollama desktop systems.' }
     if ($RamGiB -lt 60) { throw 'The IQ3_S 125B preset requires a 64GB-class RAM system. Use npm run setup with a smaller installed Ollama model on this PC.' }
     $gpu = $Gpus | Where-Object { $_.MemoryMiB -ge 11264 } | Sort-Object MemoryMiB -Descending | Select-Object -First 1
@@ -202,6 +202,7 @@ function Get-StrataHardwareProfile([double]$RamGiB, [object[]]$Gpus, [string]$Ar
         RamGiB = $RamGiB
         GpuIndex = [int]$gpu.Index
         GpuName = [string]$gpu.Name
+        CpuName = $CpuName
         VramMiB = [int]$gpu.MemoryMiB
         ResidentBudgetGiB = [int][math]::Min(48, [math]::Floor($RamGiB - 23))
         VramReserveMiB = 2048
@@ -217,5 +218,6 @@ function Read-StrataHardwareProfile {
     $gpus = @($lines | ConvertFrom-Csv -Header Index,Name,MemoryMiB | ForEach-Object {
         [pscustomobject]@{ Index = [int]$_.Index.Trim(); Name = $_.Name.Trim(); MemoryMiB = [int]$_.MemoryMiB.Trim() }
     })
-    Get-StrataHardwareProfile -RamGiB $ramGiB -Gpus $gpus -Architecture $env:PROCESSOR_ARCHITECTURE
+    $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Name
+    Get-StrataHardwareProfile -RamGiB $ramGiB -Gpus $gpus -Architecture $env:PROCESSOR_ARCHITECTURE -CpuName $cpu
 }

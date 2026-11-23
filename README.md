@@ -293,6 +293,12 @@ From this checkout, run:
 npm run launch:deepseek
 ```
 
+For Strata IQ3_S 128K, the default Harness sends a small initial tool catalog. The model uses `load_tools` to enable the `desktop` or `chrome` group, or individual tools, for subsequent steps. GitHub uses the existing shell and authenticated `gh` CLI. Session titles use the first message so the single GPU can serve the conversation immediately. An explicitly selected tool profile takes precedence.
+
+With the GPU idle, run `npm run test:deepseek-latency` for a live two-turn memory check in an isolated session. It reports engine time and tokens read and reused per turn. CLI wall time also includes starting the Harness process.
+
+On an i9-13950HX with a 16 GB RTX 4090 Laptop GPU and 64 GB RAM, a matched Web test with Strata v0.2.20 and the model already loaded reduced first-turn input from 41,411 to 2,361 tokens and time to a visible reply from 35.8 to 7.7 seconds. Two follow-ups read 30 and 25 new tokens and took 1.31 and 0.94 seconds. Two runs in the everyday workspace took 11.0–18.5 seconds for the first reply and 2.34–4.77 seconds for follow-ups. This hardware profile uses 8,192-token prefill chunks and a 36 GiB resident expert budget. Other hardware retains adaptive settings.
+
 Fresh deployments seed Chinese as the durable Web UI language, independent of
 the browser's language. Later choices in Settings → General → Language are
 preserved across reconnects and redeployments.
