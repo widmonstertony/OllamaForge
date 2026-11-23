@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { zstdDecompressSync } from 'node:zlib';
 
 export const name = 'ollamaforge-preserving-session-migration';
-export const inject = ['agents', 'sessions', 'agentPresets', 'workspaceRegistry', 'agentDefaultModel', 'sessionController'];
+export const inject = ['agents', 'sessions', 'agentPresets', 'workspaceRegistry', 'agentDefaultModel', 'sessionController', 'sessionPersistence'];
 
 export function completedSessionSnapshot(bytes, sourceId) {
   const records = zstdDecompressSync(bytes).toString('utf8').trim().split(/\r?\n/).map(line => JSON.parse(line));
@@ -22,14 +22,28 @@ export async function apply(ctx, config) {
   const request = JSON.parse(fs.readFileSync(config.requestFile, 'utf8'));
   const directory = fs.realpathSync(request.directory);
   if (!/^session-[a-f0-9-]+$/.test(request.sourceId) || !/^session-[a-f0-9-]+$/.test(request.targetId) || request.sourceId === request.targetId) throw new Error('Invalid session migration identity.');
-  const require = createRequire(path.join(root, '.runtime', 'deepseek-harness', 'package.json'));
-  const [{ buildForkSeed }, { SessionLogOffset }] = await Promise.all([
-    import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session/fork')).href),
-    import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href),
-  ]);
-  let existing;
-  try { existing = await ctx.sessionController.inspect(request.targetId); } catch { }
-  if (!existing) {
+  const target = await ctx.sessionPersistence.stat(request.targetId);
+  if (target) {
+    const { header } = target;
+    if (header.id !== request.targetId || header.parentSession !== request.sourceId || fs.realpathSync(header.cwd) !== directory || !header.isSeeded) {
+      throw new Error('Existing migration target belongs to another operation.');
+    }
+    if (fs.existsSync(request.receiptFile)) {
+      const receipt = JSON.parse(fs.readFileSync(request.receiptFile, 'utf8'));
+      if (receipt.allPassed === true && receipt.targetId === header.id && receipt.sourceId === header.parentSession &&
+          receipt.directory === directory && Number.isSafeInteger(receipt.inheritedEventCount) && receipt.inheritedEventCount > 0 &&
+          receipt.revision === target.revision) {
+        ctx.provide('ollamaforgeMigrationReady', true);
+        return;
+      }
+    }
+  }
+  if (!target) {
+    const require = createRequire(path.join(root, '.runtime', 'deepseek-harness', 'package.json'));
+    const [{ buildForkSeed }, { SessionLogOffset }] = await Promise.all([
+      import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session/fork')).href),
+      import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href),
+    ]);
     const { events } = completedSessionSnapshot(fs.readFileSync(request.sourceFile), request.sourceId);
     const seed = buildForkSeed(events, events.at(-1).seq);
     const preset = (await ctx.agentPresets.resolve('standard')).id;
@@ -46,12 +60,10 @@ export async function apply(ctx, config) {
     const titles = ctx.get('sessionTitle');
     const priorTitle = events.findLast(event => event.type === 'session/title')?.data.title ?? 'Recovered session';
     if (titles) titles.rename(handle.agent.session, request.title ?? `${priorTitle} · 已迁移`);
-  } else if (fs.realpathSync(existing.meta.cwd) !== directory || existing.meta.parentSession !== request.sourceId) {
-    throw new Error('Existing migration target belongs to another operation.');
   }
   const checked = await ctx.sessionController.inspect(request.targetId);
   if (checked.meta.cwd !== directory || checked.meta.parentSession !== request.sourceId) throw new Error('Migrated session header did not retain its project/parent.');
   fs.writeFileSync(request.receiptFile, JSON.stringify({ sourceId: request.sourceId, targetId: request.targetId, directory,
-    inheritedEventCount: checked.inheritedEventCount, allPassed: true, at: new Date().toISOString() }, null, 2));
+    inheritedEventCount: checked.inheritedEventCount, ...(target ? { revision: target.revision } : {}), allPassed: true, at: new Date().toISOString() }, null, 2));
   ctx.provide('ollamaforgeMigrationReady', true);
 }

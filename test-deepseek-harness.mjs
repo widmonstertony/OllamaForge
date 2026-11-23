@@ -86,6 +86,8 @@ const reconnect = { 'base-url': 'http://127.0.0.1:8080/v1', model: 'installed-iq
 const readSavedStrata = async url => url.endsWith('/models') ? { data: [{ id: 'installed-iq3' }] }
   : { service: 'strata', model: 'installed-iq3', max_context: 131072, images: true };
 assert.equal((await discoverConnection(reconnect, readSavedStrata)).images, true, 'Saved launch retains verified screenshot support.');
+const standbyStrata = async url => url.endsWith('/models') ? { data: [] } : { ...(await readSavedStrata(url)), loaded: false };
+assert.equal((await discoverConnection(reconnect, standbyStrata)).model, reconnect.model);
 await assert.rejects(() => discoverConnection({ ...reconnect, context: 262144 }, readSavedStrata), /no longer matches/);
 const patch = buildHarnessPatch(strata);
 assert.equal(patch[3].config.modelPolicies[0].maxTokens, 2048);
@@ -94,6 +96,11 @@ assert.equal(patch[3].config.modelPolicies[0].provider, 'ollamaforge-local');
 assert.equal(patch[2].insert.length, 4);
 const controls = buildHarnessPatch({ ...strata, toolProfile: 'local-controls' });
 const iq3 = { ...strata, model: 'qwen3.8-flash-next-iq3_s' };
+const detected = await discoverConnection({}, async () => ({ service: 'strata', model: iq3.model, max_context: 131072 }));
+assert.equal(detected.api, 'openai-completions');
+assert.deepEqual(buildHarnessPatch(detected)[0].config.providers['ollamaforge-local'].compat.chatTemplateKwargs,
+  { enable_thinking: { $var: 'thinking.enabled' }, preserve_thinking: false });
+assert.equal(buildHarnessPatch({ ...detected, api: 'openai-responses' })[0].config.providers['ollamaforge-local'].compat, undefined);
 const fast = buildHarnessPatch(iq3);
 assert.ok(fast[2].insert.some(row => row.id === 'ollamaforge-strata-tools'));
 assert.ok(fast.some(row => row.id === 'session-title-llm' && row.disabled));

@@ -77,6 +77,11 @@ export function validateLocalURL(value) {
   return url.href.replace(/\/$/, '');
 }
 
+function preferredAPI(baseURL, model) {
+  return baseURL === 'http://127.0.0.1:8080/v1' && model === 'qwen3.8-flash-next-iq3_s'
+    ? 'openai-completions' : 'openai-responses';
+}
+
 export function resolveProjectWorkspace(value, runtime = RUNTIME) {
   const directory = fs.realpathSync(value);
   if (!fs.statSync(directory).isDirectory()) throw new Error('Workspace must be an existing directory.');
@@ -105,7 +110,6 @@ export async function discoverConnection(options, read = json) {
       const modalities = byId.get(model)?.input_modalities;
       return Array.isArray(modalities) ? { images: modalities.includes('image') } : {};
     };
-    if (!byId.has(options.model)) throw new Error('Selected model is not listed by this endpoint.');
     const additionalModels = [
       ...(options['extra-model'] ? [{ model: options['extra-model'], contextWindow: Number(options['extra-context']) }] : []),
       ...(options.additionalModels ?? []),
@@ -119,20 +123,23 @@ export async function discoverConnection(options, read = json) {
     }
     // Ordinary reconnects resolve to an explicit saved endpoint. Revalidate the
     // Strata capability rather than silently dropping screenshot support.
-    let images;
+    let images, standby = false;
     if (baseURL === 'http://127.0.0.1:8080/v1') {
       const health = await read('http://127.0.0.1:8080/health');
-      if (health.service !== 'strata' || health.model !== options.model || Number(options.context) > Number(health.max_context)) throw new Error('Saved Strata model or context no longer matches its health response.');
+      if (health.service !== 'strata' || health.model !== options.model || !(Number(options.context) <= Number(health.max_context))) throw new Error('Saved Strata model or context no longer matches its health response.');
       images = health.images === true;
+      standby = health.loaded === false;
     }
-    return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? 'openai-responses',
+    if (!byId.has(options.model) && !standby) throw new Error('Selected model is not listed by this endpoint.');
+    return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? preferredAPI(baseURL, options.model),
       ...(images == null ? inputCapability(options.model) : { images }),
       ...(additionalModels.length ? { additionalModels: additionalModels.map(extra => ({ ...extra, ...inputCapability(extra.model) })) } : {}) };
   }
   let strata;
   try { strata = await read('http://127.0.0.1:8080/health'); } catch { }
   if (strata?.service === 'strata' && strata.model && strata.max_context && (!options.model || options.model === strata.model)) {
-    return { baseURL: 'http://127.0.0.1:8080/v1', model: strata.model, contextWindow: Number(strata.max_context), api: options.api ?? 'openai-responses', images: strata.images === true };
+    const baseURL = 'http://127.0.0.1:8080/v1';
+    return { baseURL, model: strata.model, contextWindow: Number(strata.max_context), api: options.api ?? preferredAPI(baseURL, strata.model), images: strata.images === true };
   }
   const installed = (await read('http://127.0.0.1:11434/api/tags')).models?.map(item => item.name).filter(name => !name.endsWith(':cloud')) ?? [];
   const model = options.model ?? installed.find(name => /qwen.*(?:codex|27b)/i.test(name)) ?? installed[0];
@@ -165,6 +172,10 @@ export function buildHarnessPatch(connection) {
   return [
     { id: 'llm-pi-ai', config: { providers: { 'ollamaforge-local': {
       displayName: 'OllamaForge Local', apiKeyEnv: LOCAL_KEY, api: connection.api,
+      ...(connection.api === 'openai-completions' && preferredAPI(connection.baseURL, connection.model) === connection.api
+        ? { compat: { thinkingFormat: 'chat-template', chatTemplateKwargs: {
+          enable_thinking: { $var: 'thinking.enabled' }, preserve_thinking: false,
+        } } } : {}),
       ...(connection.baseURL === 'http://127.0.0.1:8080/v1' ? { reasoning: 'off' } : {}),
       baseURL: connection.baseURL, streamIdleTimeoutMs: 600000,
       retryPolicy: { mode: 'normal', maxRetries: 1 },

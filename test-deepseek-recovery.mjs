@@ -5,7 +5,7 @@ import path from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { localCompactionPolicy, CompactionBackoff, createGuardedEngine, rewriteCompactionTree } from './deepseek-compaction.mjs';
 import { preserveHarnessWork } from './deepseek-recovery.mjs';
-import { completedSessionSnapshot } from './deepseek-migrate-session.mjs';
+import { apply as verifyMigration, completedSessionSnapshot } from './deepseek-migrate-session.mjs';
 import { resolveProjectWorkspace } from './deepseek-harness.mjs';
 
 for (const window of [8192, 32768, 65536, 131072]) {
@@ -89,6 +89,24 @@ await assert.rejects(() => summarizer.summarize(input, owner), /truncated/);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'of-recovery-'));
 try {
+  const requestFile = path.join(root, 'migration.json'), receiptFile = path.join(root, 'receipt.json');
+  const directory = fs.realpathSync(root);
+  const request = { sourceId: 'session-aa', targetId: 'session-bb', directory, receiptFile };
+  fs.writeFileSync(requestFile, JSON.stringify(request));
+  const header = { id: request.targetId, cwd: directory, parentSession: request.sourceId, isSeeded: true };
+  let revision = '1', reads = 0, ready = 0;
+  const ctx = { sessionPersistence: { stat: async () => ({ header, revision }) },
+    sessionController: { inspect: async () => { reads++; return { meta: header, inheritedEventCount: 440 }; } },
+    provide: () => { ready++; } };
+  await verifyMigration(ctx, { requestFile });
+  await verifyMigration(ctx, { requestFile });
+  assert.equal(reads, 1, 'An unchanged migrated chat must not replay its history at every launch.');
+  revision = '2';
+  await verifyMigration(ctx, { requestFile });
+  assert.equal(reads, 2, 'A changed session needs a fresh inspection.');
+  header.parentSession = 'session-cc';
+  await assert.rejects(() => verifyMigration(ctx, { requestFile }), /another operation/);
+  assert.equal(ready, 3);
   const source = path.join(root, '旧项目'), target = path.join(root, 'new project');
   fs.mkdirSync(source); fs.mkdirSync(path.join(source, '__pycache__'));
   const runtime = path.join(root, 'runtime'); fs.mkdirSync(runtime); fs.mkdirSync(path.join(runtime, 'live-test'));
