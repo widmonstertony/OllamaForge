@@ -86,6 +86,10 @@ const controls = buildHarnessPatch({ ...strata, toolProfile: 'local-controls' })
 assert.ok(controls[2].insert.some(plugin => plugin.name?.endsWith('/deepseek-local-tools.mjs')));
 assert.equal(patch[2].insert[3].config.mode, 'launch');
 assert.equal(patch[2].insert[3].config.headless, false);
+const nativeBrowser = buildHarnessPatch({ ...strata, browserMode: 'native' });
+assert.equal(nativeBrowser[2].insert.find(plugin => plugin.id === 'ollamaforge-computer-driver').config.nativeBrowser, true);
+assert.ok(!nativeBrowser[2].insert.some(plugin => plugin.id === 'ollamaforge-chrome'));
+assert.equal(resolveHarnessOptions(parseHarnessArgs(['launch']), { browserMode: 'native' })['browser-mode'], 'native');
 const vision = await discoverConnection({}, async () => ({ service: 'strata', model: 'vision-iq3', max_context: 131072, images: true }));
 assert.deepEqual(buildHarnessPatch(vision)[0].config.providers['ollamaforge-local'].models[0].input, ['text', 'image']);
 assert.equal(patch[0].config.providers['ollamaforge-local'].models[0].input[0], 'text');
@@ -146,6 +150,15 @@ assert.deepEqual(selectablePatch[0].config.providers['ollamaforge-local'].models
   [['short', 65536], ['long', 131072]]);
 assert.equal(selectablePatch[1].config.model, 'short');
 assert.deepEqual(selectablePatch[3].config.modelPolicies.map(policy => policy.model), ['short', 'long']);
+const mixedInputs = await discoverConnection({
+  'base-url': 'http://localhost:9999/v1', model: 'long', context: 131072,
+  'extra-model': 'short', 'extra-context': 65536,
+}, async () => ({ data: [
+  { id: 'long', input_modalities: ['text'] },
+  { id: 'short', input_modalities: ['text', 'image'] },
+] }));
+assert.deepEqual(buildHarnessPatch(mixedInputs)[0].config.providers['ollamaforge-local'].models.map(model => model.input),
+  [['text'], ['text', 'image']], 'A vision fallback does not send screenshots to the text-only default.');
 await assert.rejects(() => discoverConnection({
   'base-url': 'http://localhost:9999/v1', model: 'short', context: 65536,
   'extra-model': 'missing', 'extra-context': 131072,

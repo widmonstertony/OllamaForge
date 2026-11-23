@@ -28,7 +28,7 @@ export function projectNativeResult(result) {
     'Exact native snapshot handles (use these tokens without modification; refresh after every action; query the window again if needed):\n' + JSON.stringify(handles) }] };
 }
 
-export async function apply(ctx) {
+export async function apply(ctx, config = {}) {
   const root = path.dirname(fileURLToPath(import.meta.url));
   const require = createRequire(path.join(root, '.runtime', 'deepseek-harness', 'package.json'));
   const load = specifier => import(pathToFileURL(require.resolve(specifier)).href);
@@ -69,9 +69,12 @@ export async function apply(ctx) {
       }));
     }
     ctx.systemPrompt.section({ name: 'computer-use:ollamaforge-native', order: ctx.systemPrompt.getSectionOrder('TOOL_COMPUTER_USE'), text:
-      'Use Cua Driver for native computer control. Discover the exact app/window and capture fresh state before each action. Set max_elements around 80 for a window snapshot. The appended exact snapshot JSON supplies element_token and snapshot_id; use those actual handles, never a bare invented index. A new snapshot invalidates old handles. Honor the selected input delivery mode and driver refusals. Verify outcomes after actions. Operate only the apps and tasks the user authorized. Do not change security/permission settings or share another session\'s desktop workflow.' });
-    for (let i = 0; i < 100 && !ctx.browserUse.providerName; i++) await new Promise(resolve => setTimeout(resolve, 50));
-    if (!ctx.browserUse.providerName) throw new Error('Chrome provider did not activate; refusing a partial controls setup.');
+      'Use Cua Driver for native computer control. Discover the exact app/window and capture fresh state before each action. Prefer a titled on-screen window. If an app is running but only untitled off-screen windows are listed, reopen the app with launch_app and list its windows again instead of inspecting the hidden windows one by one. Start with the accessibility tree and set include_screenshot false when the selected model only accepts text. Set max_elements around 80 for a window snapshot. The appended exact snapshot JSON supplies element_token and snapshot_id; use those actual handles, never a bare invented index. A new snapshot invalidates old handles. For application menu commands, prefer invoke_menu with the exact menu path or use a known hotkey targeted at the window. Honor the selected input delivery mode and driver refusals. Verify outcomes after actions. Operate only the apps and tasks the user authorized. Do not change security/permission settings or share another session\'s desktop workflow.' +
+      (config.nativeBrowser ? ' For browsing use the existing Google Chrome app (com.google.Chrome) via these native tools. Keep the current Chrome profile and sign-in. For a separate web task, open a new tab in that window.' : '') });
+    if (!config.nativeBrowser) {
+      for (let i = 0; i < 100 && !ctx.browserUse.providerName; i++) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!ctx.browserUse.providerName) throw new Error('Chrome provider did not activate; refusing a partial controls setup.');
+    }
     ctx.provide('ollamaforgeNativeReady', { toolCount: names.size });
   } catch (error) { await dispose(); throw error; }
 }

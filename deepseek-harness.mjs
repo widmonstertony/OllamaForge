@@ -24,7 +24,7 @@ export function parseHarnessArgs(args) {
     const key = args[i];
     if (key === '--no-open') { options.noOpen = true; continue; }
     if (key === '--apply' && options.command === 'repair-workspace') { options.apply = true; continue; }
-    if (!['--base-url', '--model', '--context', '--extra-model', '--extra-context', '--tool-profile', '--api', '--port', '--workspace'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
+    if (!['--base-url', '--model', '--context', '--extra-model', '--extra-context', '--tool-profile', '--browser-mode', '--api', '--port', '--workspace'].includes(key) || !args[i + 1]) throw new Error(`Invalid option: ${key}`);
     options[key.slice(2)] = args[++i];
   }
   options.port = Number(options.port);
@@ -37,6 +37,7 @@ export function parseHarnessArgs(args) {
     throw new Error('An extra model requires --base-url, --extra-model and --extra-context.');
   }
   if (options['tool-profile'] && options['tool-profile'] !== 'local-controls') throw new Error('Unsupported tool profile.');
+  if (options['browser-mode'] && !['isolated', 'native'].includes(options['browser-mode'])) throw new Error('Browser mode must be isolated or native.');
   if (options.api && !['openai-responses', 'openai-completions'].includes(options.api)) throw new Error('Unsupported API protocol.');
   if (options['base-url']) validateLocalURL(options['base-url']);
   return options;
@@ -56,6 +57,7 @@ export function resolveHarnessOptions(options, saved = {}, explicitPort = false)
     if (saved.additionalModels?.length > 1) previous.additionalModels = saved.additionalModels.slice(1);
   }
   if (saved.toolProfile) previous['tool-profile'] = saved.toolProfile;
+  if (saved.browserMode) previous['browser-mode'] = saved.browserMode;
   if (saved.workspace) previous.workspace = saved.workspace;
   const resolved = { ...previous, ...options };
   if (!explicitPort && saved.port != null) resolved.port = saved.port;
@@ -98,14 +100,19 @@ export async function discoverConnection(options, read = json) {
     if (!options.model || !options.context) throw new Error('Custom endpoints require --model and --context.');
     const baseURL = validateLocalURL(options['base-url']);
     const listed = await read(`${baseURL}/models`);
-    if (!listed.data?.some(item => item.id === options.model)) throw new Error('Selected model is not listed by this endpoint.');
+    const byId = new Map((listed.data ?? []).map(item => [item.id, item]));
+    const inputCapability = model => {
+      const modalities = byId.get(model)?.input_modalities;
+      return Array.isArray(modalities) ? { images: modalities.includes('image') } : {};
+    };
+    if (!byId.has(options.model)) throw new Error('Selected model is not listed by this endpoint.');
     const additionalModels = [
       ...(options['extra-model'] ? [{ model: options['extra-model'], contextWindow: Number(options['extra-context']) }] : []),
       ...(options.additionalModels ?? []),
     ];
     const seen = new Set([options.model]);
     for (const extra of additionalModels) {
-      if (!listed.data?.some(item => item.id === extra.model)) throw new Error('Extra model is not listed by this endpoint.');
+      if (!byId.has(extra.model)) throw new Error('Extra model is not listed by this endpoint.');
       if (seen.has(extra.model)) throw new Error('Extra model must differ from the default model and other extra models.');
       if (!Number.isInteger(extra.contextWindow) || extra.contextWindow < 4096) throw new Error('Context must be an integer >=4096.');
       seen.add(extra.model);
@@ -119,8 +126,8 @@ export async function discoverConnection(options, read = json) {
       images = health.images === true;
     }
     return { baseURL, model: options.model, contextWindow: Number(options.context), api: options.api ?? 'openai-responses',
-      ...(images == null ? {} : { images }),
-      ...(additionalModels.length ? { additionalModels } : {}) };
+      ...(images == null ? inputCapability(options.model) : { images }),
+      ...(additionalModels.length ? { additionalModels: additionalModels.map(extra => ({ ...extra, ...inputCapability(extra.model) })) } : {}) };
   }
   let strata;
   try { strata = await read('http://127.0.0.1:8080/health'); } catch { }
@@ -146,13 +153,14 @@ function harnessModelName(model) {
   const backend = /dflash2/i.test(id) ? `${details.format === 'gguf' ? 'GGUF' : 'MLX'} + DFlash2`
     : /mlx/i.test(id) ? 'MLX' : details.format === 'gguf' ? 'GGUF' : details.runner ?? details.format;
   const context = model.contextWindow % 1024 === 0 ? `${model.contextWindow / 1024}K` : `${model.contextWindow} tokens`;
-  return [title, quant, backend, context, '本地'].filter(Boolean).join(' · ');
+  return [title, quant, backend, context, model.images ? '截图视觉' : null, '本地'].filter(Boolean).join(' · ');
 }
 
 export function buildHarnessPatch(connection) {
   validateLocalURL(connection.baseURL);
   const models = [connection, ...(connection.additionalModels ?? [])];
   const controls = connection.toolProfile === 'local-controls' ? [{ id: 'ollamaforge-local-controls', name: pathToFileURL(path.join(ROOT, 'deepseek-local-tools.mjs')).href }] : [];
+  const nativeBrowser = connection.browserMode === 'native';
   return [
     { id: 'llm-pi-ai', config: { providers: { 'ollamaforge-local': {
       displayName: 'OllamaForge Local', apiKeyEnv: LOCAL_KEY, api: connection.api,
@@ -160,7 +168,7 @@ export function buildHarnessPatch(connection) {
       baseURL: connection.baseURL, streamIdleTimeoutMs: 600000,
       retryPolicy: { mode: 'normal', maxRetries: 1 },
       models: models.map(model => ({ id: model.model, name: harnessModelName(model), contextWindow: model.contextWindow,
-        maxTokens: Math.min(8192, Math.floor(model.contextWindow / 4)), input: connection.images ? ['text', 'image'] : ['text'],
+        maxTokens: Math.min(8192, Math.floor(model.contextWindow / 4)), input: (model.images ?? connection.images) ? ['text', 'image'] : ['text'],
         reasoningEfforts: connection.baseURL === 'http://127.0.0.1:8080/v1' ? { off: 'none', high: 'high' } : false })),
     } } } },
     { id: 'agent-default-model', config: { provider: 'ollamaforge-local', model: connection.model,
@@ -168,9 +176,12 @@ export function buildHarnessPatch(connection) {
     { insert: [
       ...controls,
       { id: 'ollamaforge-computer-use', name: '@deepseek-ai/dsh-computer-use' },
-      { id: 'ollamaforge-computer-driver', name: pathToFileURL(path.join(ROOT, 'deepseek-native-provider.mjs')).href },
+      { id: 'ollamaforge-computer-driver', name: pathToFileURL(path.join(ROOT, 'deepseek-native-provider.mjs')).href,
+        ...(nativeBrowser ? { config: { nativeBrowser: true } } : {}) },
       { id: 'ollamaforge-browser-use', name: '@deepseek-ai/dsh-browser-use' },
-      { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
+      ...(nativeBrowser ? [] : [
+        { id: 'ollamaforge-chrome', name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp', config: { mode: 'launch', headless: false } },
+      ]),
     ] },
     { id: 'compaction-basic', config: {
       modelPolicies: models.map(model => ({ provider: 'ollamaforge-local', model: model.model, ...localCompactionPolicy(model.contextWindow) })),
@@ -232,6 +243,7 @@ export async function connectHarness(options) {
     }));
   }
   if (options['tool-profile']) connection.toolProfile = options['tool-profile'];
+  if (options['browser-mode']) connection.browserMode = options['browser-mode'];
   ensureInstalled();
   fs.mkdirSync(HOME, { recursive: true });
   const previous = fs.existsSync(SETTINGS) ? JSON.parse(fs.readFileSync(SETTINGS)) : {};
