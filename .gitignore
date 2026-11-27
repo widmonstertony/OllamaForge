@@ -115,6 +115,9 @@ macos/*
 !macos/metal-codex.mjs
 !macos/native-codex.mjs
 !macos/ollama-harness.mjs
+!macos/mlx-kv4-service.py
+!macos/mlx-kv4-worker.py
+!macos/test_mlx_request_handoff.py
 !macos/benchmark-ollama.mjs
 !macos/benchmark-m5-max.json
 !macos/install-metal-shortcuts.mjs
