@@ -16,6 +16,9 @@ jobs:
         with:
           node-version: '24.22.1'
       - run: npm test
+      - name: macOS MLX request handoff
+        if: runner.os == 'macOS'
+        run: python3 macos/test_mlx_request_handoff.py
       - run: node --check macos/local-codex.mjs
       - name: Windows runtime and startup portability tests
         if: runner.os == 'Windows'
